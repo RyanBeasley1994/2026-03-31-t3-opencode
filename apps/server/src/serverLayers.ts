@@ -19,9 +19,12 @@ import { RuntimeReceiptBusLive } from "./orchestration/Layers/RuntimeReceiptBus"
 import { ProviderUnsupportedError } from "./provider/Errors";
 import { makeClaudeAdapterLive } from "./provider/Layers/ClaudeAdapter";
 import { makeCodexAdapterLive } from "./provider/Layers/CodexAdapter";
+import { OpenCodeAdapterLive } from "./provider/Layers/OpenCodeAdapter";
+import { OpenCodeServerPoolLive } from "./provider/Layers/OpenCodeServerPool";
 import { ProviderAdapterRegistryLive } from "./provider/Layers/ProviderAdapterRegistry";
 import { makeProviderServiceLive } from "./provider/Layers/ProviderService";
 import { ProviderSessionDirectoryLive } from "./provider/Layers/ProviderSessionDirectory";
+import { OpenCodeServerPool } from "./provider/Services/OpenCodeServerPool";
 import { ProviderService } from "./provider/Services/ProviderService";
 import { makeEventNdjsonLogger } from "./provider/Layers/EventNdjsonLogger";
 import { ServerSettingsService } from "./serverSettings";
@@ -53,7 +56,7 @@ const makeRuntimePtyAdapterLayer = () =>
   }).pipe(Layer.unwrap);
 
 export function makeServerProviderLayer(): Layer.Layer<
-  ProviderService,
+  ProviderService | OpenCodeServerPool,
   ProviderUnsupportedError,
   | SqlClient.SqlClient
   | ServerConfig
@@ -78,14 +81,22 @@ export function makeServerProviderLayer(): Layer.Layer<
     const claudeAdapterLayer = makeClaudeAdapterLive(
       nativeEventLogger ? { nativeEventLogger } : undefined,
     );
+    const openCodeServerPoolLayer = OpenCodeServerPoolLive;
+    const openCodeAdapterLayer = OpenCodeAdapterLive;
     const adapterRegistryLayer = ProviderAdapterRegistryLive.pipe(
       Layer.provide(codexAdapterLayer),
       Layer.provide(claudeAdapterLayer),
+      Layer.provide(openCodeAdapterLayer),
       Layer.provideMerge(providerSessionDirectoryLayer),
     );
-    return makeProviderServiceLive(
+    const providerServiceLayer = makeProviderServiceLive(
       canonicalEventLogger ? { canonicalEventLogger } : undefined,
-    ).pipe(Layer.provide(adapterRegistryLayer), Layer.provide(providerSessionDirectoryLayer));
+    ).pipe(
+      Layer.provide(adapterRegistryLayer),
+      Layer.provide(providerSessionDirectoryLayer),
+      Layer.provideMerge(openCodeServerPoolLayer),
+    );
+    return providerServiceLayer;
   }).pipe(Layer.unwrap);
 }
 

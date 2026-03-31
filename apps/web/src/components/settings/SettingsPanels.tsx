@@ -31,6 +31,7 @@ import {
 } from "../../components/desktopUpdate.logic";
 import { ProviderModelPicker } from "../chat/ProviderModelPicker";
 import { TraitsPicker } from "../chat/TraitsPicker";
+import { shouldRenderTextGenerationTraitsControl } from "../ChatView.logic";
 import { resolveAndPersistPreferredEditor } from "../../editorPreferences";
 import { isElectron } from "../../env";
 import { useTheme } from "../../hooks/useTheme";
@@ -43,9 +44,12 @@ import {
 import { serverConfigQueryOptions, serverQueryKeys } from "../../lib/serverReactQuery";
 import {
   MAX_CUSTOM_MODEL_LENGTH,
+  MODEL_PROVIDER_SETTINGS,
+  getAppModelOptions,
   getCustomModelOptionsByProvider,
   resolveAppModelSelectionState,
 } from "../../modelSelection";
+import { buildNextTextGenerationModelSelection } from "../ChatView.logic";
 import { ensureNativeApi, readNativeApi } from "../../nativeApi";
 import { useStore } from "../../store";
 import { formatRelativeTime, formatRelativeTimeLabel } from "../../timestampFormat";
@@ -108,6 +112,12 @@ const PROVIDER_SETTINGS: readonly InstallProviderSettings[] = [
     title: "Claude",
     binaryPlaceholder: "Claude binary path",
     binaryDescription: "Path to the Claude binary",
+  },
+  {
+    provider: "opencode",
+    title: "OpenCode",
+    binaryPlaceholder: "OpenCode binary path",
+    binaryDescription: "Path to the OpenCode binary",
   },
 ] as const;
 
@@ -530,12 +540,18 @@ export function GeneralSettingsPanel() {
         DEFAULT_UNIFIED_SETTINGS.providers.claudeAgent.binaryPath ||
       settings.providers.claudeAgent.customModels.length > 0,
     ),
+    opencode: Boolean(
+      settings.providers.opencode.binaryPath !==
+        DEFAULT_UNIFIED_SETTINGS.providers.opencode.binaryPath ||
+      settings.providers.opencode.customModels.length > 0,
+    ),
   });
   const [customModelInputByProvider, setCustomModelInputByProvider] = useState<
     Record<ProviderKind, string>
   >({
     codex: "",
     claudeAgent: "",
+    opencode: "",
   });
   const [customModelErrorByProvider, setCustomModelErrorByProvider] = useState<
     Partial<Record<ProviderKind, string | null>>
@@ -701,14 +717,21 @@ export function GeneralSettingsPanel() {
     const defaultProviderConfig = DEFAULT_UNIFIED_SETTINGS.providers[providerSettings.provider];
     const statusKey = liveProvider?.status ?? (providerConfig.enabled ? "warning" : "disabled");
     const summary = getProviderSummary(liveProvider);
-    const models: ReadonlyArray<ServerProviderModel> =
-      liveProvider?.models ??
-      providerConfig.customModels.map((slug) => ({
-        slug,
-        name: slug,
-        isCustom: true,
-        capabilities: null,
-      }));
+    const models: ReadonlyArray<ServerProviderModel> = getAppModelOptions(
+      settings,
+      serverProviders,
+      providerSettings.provider,
+    ).map((model) => {
+      const liveModel = liveProvider?.models.find((candidate) => candidate.slug === model.slug);
+      return (
+        liveModel ?? {
+          slug: model.slug,
+          name: model.name,
+          isCustom: model.isCustom,
+          capabilities: null,
+        }
+      );
+    });
 
     return {
       provider: providerSettings.provider,
@@ -726,6 +749,9 @@ export function GeneralSettingsPanel() {
       statusStyle: PROVIDER_STATUS_STYLES[statusKey],
       summary,
       versionLabel: getProviderVersionLabel(liveProvider?.version),
+      customModelConfig: MODEL_PROVIDER_SETTINGS.find(
+        (config) => config.provider === providerSettings.provider,
+      ),
     };
   });
 
@@ -989,42 +1015,48 @@ export function GeneralSettingsPanel() {
                     textGenerationModelSelection: resolveAppModelSelectionState(
                       {
                         ...settings,
-                        textGenerationModelSelection: { provider, model },
+                        textGenerationModelSelection: buildNextTextGenerationModelSelection({
+                          provider,
+                          model,
+                          existingSelection: settings.textGenerationModelSelection ?? null,
+                        }),
                       },
                       serverProviders,
                     ),
                   });
                 }}
               />
-              <TraitsPicker
-                provider={textGenProvider}
-                models={
-                  serverProviders.find((provider) => provider.provider === textGenProvider)
-                    ?.models ?? []
-                }
-                model={textGenModel}
-                prompt=""
-                onPromptChange={() => {}}
-                modelOptions={textGenModelOptions}
-                allowPromptInjectedEffort={false}
-                triggerVariant="outline"
-                triggerClassName="min-w-0 max-w-none shrink-0 text-foreground/90 hover:text-foreground"
-                onModelOptionsChange={(nextOptions) => {
-                  updateSettings({
-                    textGenerationModelSelection: resolveAppModelSelectionState(
-                      {
-                        ...settings,
-                        textGenerationModelSelection: {
-                          provider: textGenProvider,
-                          model: textGenModel,
-                          ...(nextOptions ? { options: nextOptions } : {}),
+              {shouldRenderTextGenerationTraitsControl(textGenProvider) ? (
+                <TraitsPicker
+                  provider={textGenProvider}
+                  models={
+                    serverProviders.find((provider) => provider.provider === textGenProvider)
+                      ?.models ?? []
+                  }
+                  model={textGenModel}
+                  prompt=""
+                  onPromptChange={() => {}}
+                  modelOptions={textGenModelOptions}
+                  allowPromptInjectedEffort={false}
+                  triggerVariant="outline"
+                  triggerClassName="min-w-0 max-w-none shrink-0 text-foreground/90 hover:text-foreground"
+                  onModelOptionsChange={(nextOptions) => {
+                    updateSettings({
+                      textGenerationModelSelection: resolveAppModelSelectionState(
+                        {
+                          ...settings,
+                          textGenerationModelSelection: {
+                            provider: textGenProvider,
+                            model: textGenModel,
+                            ...(nextOptions ? { options: nextOptions } : {}),
+                          },
                         },
-                      },
-                      serverProviders,
-                    ),
-                  });
-                }}
-              />
+                        serverProviders,
+                      ),
+                    });
+                  }}
+                />
+              ) : null}
             </div>
           }
         />
@@ -1343,9 +1375,7 @@ export function GeneralSettingsPanel() {
                             addCustomModel(providerCard.provider);
                           }}
                           placeholder={
-                            providerCard.provider === "codex"
-                              ? "gpt-6.7-codex-ultra-preview"
-                              : "claude-sonnet-5-0"
+                            providerCard.customModelConfig?.example ?? "custom-model-slug"
                           }
                           spellCheck={false}
                         />

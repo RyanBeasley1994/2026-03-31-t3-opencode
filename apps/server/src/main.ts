@@ -23,6 +23,7 @@ import * as SqlitePersistence from "./persistence/Layers/Sqlite";
 import { makeServerProviderLayer, makeServerRuntimeServicesLayer } from "./serverLayers";
 import { ProjectionSnapshotQuery } from "./orchestration/Services/ProjectionSnapshotQuery";
 import { ProviderRegistryLive } from "./provider/Layers/ProviderRegistry";
+import { OpenCodeServerPoolLive } from "./provider/Layers/OpenCodeServerPool";
 import { Server } from "./wsServer";
 import { ServerLoggerLive } from "./serverLogger";
 import { AnalyticsServiceLayerLive } from "./telemetry/Layers/AnalyticsService";
@@ -290,17 +291,24 @@ const ServerConfigLive = (input: CliInput) =>
     }),
   );
 
-const LayerLive = (input: CliInput) =>
-  Layer.empty.pipe(
+const LayerLive = (input: CliInput) => {
+  const providerLayer = makeServerProviderLayer();
+  const providerRegistryLayer = ProviderRegistryLive.pipe(
+    Layer.provide(providerLayer),
+    Layer.provideMerge(OpenCodeServerPoolLive),
+  );
+
+  return Layer.empty.pipe(
     Layer.provideMerge(makeServerRuntimeServicesLayer()),
-    Layer.provideMerge(makeServerProviderLayer()),
-    Layer.provideMerge(ProviderRegistryLive),
+    Layer.provideMerge(providerLayer),
+    Layer.provideMerge(providerRegistryLayer),
     Layer.provideMerge(SqlitePersistence.layerConfig),
     Layer.provideMerge(ServerLoggerLive),
     Layer.provideMerge(AnalyticsServiceLayerLive),
     Layer.provideMerge(ServerSettingsLive),
     Layer.provideMerge(ServerConfigLive(input)),
   );
+};
 
 const isWildcardHost = (host: string | undefined): boolean =>
   host === "0.0.0.0" || host === "::" || host === "[::]";

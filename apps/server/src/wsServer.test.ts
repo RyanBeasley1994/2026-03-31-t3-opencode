@@ -47,6 +47,10 @@ import { TerminalManager, type TerminalManagerShape } from "./terminal/Services/
 import { makeSqlitePersistenceLive, SqlitePersistenceMemory } from "./persistence/Layers/Sqlite";
 import { SqlClient, SqlError } from "effect/unstable/sql";
 import { ProviderService, type ProviderServiceShape } from "./provider/Services/ProviderService";
+import {
+  OpenCodeServerPool,
+  type OpenCodeServerPoolShape,
+} from "./provider/Services/OpenCodeServerPool";
 import { ProviderRegistry, type ProviderRegistryShape } from "./provider/Services/ProviderRegistry";
 import { Open, type OpenShape } from "./open";
 import { GitManager, type GitManagerShape } from "./git/Services/GitManager.ts";
@@ -84,6 +88,17 @@ const defaultProviderRegistryService: ProviderRegistryShape = {
   getProviders: Effect.succeed(defaultProviderStatuses),
   refresh: () => Effect.succeed(defaultProviderStatuses),
   streamChanges: Stream.empty,
+};
+
+const inertOpenCodeServerPool: OpenCodeServerPoolShape = {
+  acquire: () => Effect.die(new Error("unexpected OpenCode sidecar acquisition in wsServer test")),
+  loadProviderCatalog: () =>
+    Effect.succeed({
+      defaultModel: "openai/gpt-5.4",
+      models: [],
+    }),
+  stopAll: () => Effect.void,
+  streamEvents: Stream.empty,
 };
 
 const defaultServerSettings = DEFAULT_SERVER_SETTINGS;
@@ -496,7 +511,7 @@ describe("WebSocket Server", () => {
       authToken?: string;
       baseDir?: string;
       staticDir?: string;
-      providerLayer?: Layer.Layer<ProviderService, never>;
+      providerLayer?: Layer.Layer<ProviderService | OpenCodeServerPool, never>;
       providerRegistry?: ProviderRegistryShape;
       open?: OpenShape;
       gitManager?: GitManagerShape;
@@ -514,7 +529,9 @@ describe("WebSocket Server", () => {
     const derivedPaths = deriveServerPathsSync(baseDir, devUrl);
     const scope = await Effect.runPromise(Scope.make("sequential"));
     const persistenceLayer = options.persistenceLayer ?? SqlitePersistenceMemory;
-    const providerLayer = options.providerLayer ?? makeServerProviderLayer();
+    const providerInfrastructureLayer = options.providerLayer
+      ? options.providerLayer.pipe(Layer.provideMerge(persistenceLayer))
+      : makeServerProviderLayer().pipe(Layer.provideMerge(persistenceLayer));
     const providerRegistryLayer = Layer.succeed(
       ProviderRegistry,
       options.providerRegistry ?? defaultProviderRegistryService,
@@ -534,7 +551,6 @@ describe("WebSocket Server", () => {
       autoBootstrapProjectFromCwd: options.autoBootstrapProjectFromCwd ?? false,
       logWebSocketEvents: options.logWebSocketEvents ?? Boolean(options.devUrl),
     } satisfies ServerConfigShape);
-    const infrastructureLayer = providerLayer.pipe(Layer.provideMerge(persistenceLayer));
     const runtimeOverrides = Layer.mergeAll(
       options.gitManager ? Layer.succeed(GitManager, options.gitManager) : Layer.empty,
       options.gitCore
@@ -547,8 +563,8 @@ describe("WebSocket Server", () => {
 
     const runtimeLayer = Layer.merge(
       Layer.merge(
-        makeServerRuntimeServicesLayer().pipe(Layer.provide(infrastructureLayer)),
-        infrastructureLayer,
+        makeServerRuntimeServicesLayer().pipe(Layer.provide(providerInfrastructureLayer)),
+        providerInfrastructureLayer,
       ),
       runtimeOverrides,
     );
@@ -1284,7 +1300,10 @@ describe("WebSocket Server", () => {
       rollbackConversation: () => unsupported(),
       streamEvents: Stream.fromPubSub(runtimeEventPubSub),
     };
-    const providerLayer = Layer.succeed(ProviderService, providerService);
+    const providerLayer = Layer.mergeAll(
+      Layer.succeed(ProviderService, providerService),
+      Layer.succeed(OpenCodeServerPool, inertOpenCodeServerPool),
+    );
 
     server = await createTestServer({
       cwd: "/test",

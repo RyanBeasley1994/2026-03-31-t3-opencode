@@ -92,6 +92,8 @@ function toRuntimePayloadFromSession(
   session: ProviderSession,
   extra?: {
     readonly modelSelection?: unknown;
+    readonly poolRoot?: string;
+    readonly binaryPath?: string;
     readonly lastRuntimeEvent?: string;
     readonly lastRuntimeEventAt?: string;
   },
@@ -102,6 +104,8 @@ function toRuntimePayloadFromSession(
     activeTurnId: session.activeTurnId ?? null,
     lastError: session.lastError ?? null,
     ...(extra?.modelSelection !== undefined ? { modelSelection: extra.modelSelection } : {}),
+    ...(extra?.poolRoot !== undefined ? { poolRoot: extra.poolRoot } : {}),
+    ...(extra?.binaryPath !== undefined ? { binaryPath: extra.binaryPath } : {}),
     ...(extra?.lastRuntimeEvent !== undefined ? { lastRuntimeEvent: extra.lastRuntimeEvent } : {}),
     ...(extra?.lastRuntimeEventAt !== undefined
       ? { lastRuntimeEventAt: extra.lastRuntimeEventAt }
@@ -128,6 +132,30 @@ function readPersistedCwd(
   const rawCwd = "cwd" in runtimePayload ? runtimePayload.cwd : undefined;
   if (typeof rawCwd !== "string") return undefined;
   const trimmed = rawCwd.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function readPersistedPoolRoot(
+  runtimePayload: ProviderRuntimeBinding["runtimePayload"],
+): string | undefined {
+  if (!runtimePayload || typeof runtimePayload !== "object" || Array.isArray(runtimePayload)) {
+    return undefined;
+  }
+  const rawPoolRoot = "poolRoot" in runtimePayload ? runtimePayload.poolRoot : undefined;
+  if (typeof rawPoolRoot !== "string") return undefined;
+  const trimmed = rawPoolRoot.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function readPersistedOpenCodeBinaryPath(
+  runtimePayload: ProviderRuntimeBinding["runtimePayload"],
+): string | undefined {
+  if (!runtimePayload || typeof runtimePayload !== "object" || Array.isArray(runtimePayload)) {
+    return undefined;
+  }
+  const rawBinaryPath = "binaryPath" in runtimePayload ? runtimePayload.binaryPath : undefined;
+  if (typeof rawBinaryPath !== "string") return undefined;
+  const trimmed = rawBinaryPath.trim();
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
@@ -162,6 +190,8 @@ const makeProviderService = (options?: ProviderServiceLiveOptions) =>
       threadId: ThreadId,
       extra?: {
         readonly modelSelection?: unknown;
+        readonly poolRoot?: string;
+        readonly binaryPath?: string;
         readonly lastRuntimeEvent?: string;
         readonly lastRuntimeEventAt?: string;
       },
@@ -226,13 +256,27 @@ const makeProviderService = (options?: ProviderServiceLiveOptions) =>
         }
 
         const persistedCwd = readPersistedCwd(input.binding.runtimePayload);
+        const persistedPoolRoot = readPersistedPoolRoot(input.binding.runtimePayload);
+        const persistedOpenCodeBinaryPath = readPersistedOpenCodeBinaryPath(
+          input.binding.runtimePayload,
+        );
         const persistedModelSelection = readPersistedModelSelection(input.binding.runtimePayload);
 
         const resumed = yield* adapter.startSession({
           threadId: input.binding.threadId,
           provider: input.binding.provider,
           ...(persistedCwd ? { cwd: persistedCwd } : {}),
+          ...(persistedPoolRoot ? { poolRoot: persistedPoolRoot } : {}),
           ...(persistedModelSelection ? { modelSelection: persistedModelSelection } : {}),
+          ...(persistedOpenCodeBinaryPath
+            ? {
+                providerOptions: {
+                  opencode: {
+                    binaryPath: persistedOpenCodeBinaryPath,
+                  },
+                },
+              }
+            : {}),
           ...(hasResumeCursor ? { resumeCursor: input.binding.resumeCursor } : {}),
           runtimeMode: input.binding.runtimeMode ?? "full-access",
         });
@@ -330,6 +374,10 @@ const makeProviderService = (options?: ProviderServiceLiveOptions) =>
 
         yield* upsertSessionBinding(session, threadId, {
           modelSelection: input.modelSelection,
+          ...(input.poolRoot !== undefined ? { poolRoot: input.poolRoot } : {}),
+          ...(input.providerOptions?.opencode?.binaryPath !== undefined
+            ? { binaryPath: input.providerOptions.opencode.binaryPath }
+            : {}),
         });
         yield* analytics.record("provider.session.started", {
           provider: session.provider,
