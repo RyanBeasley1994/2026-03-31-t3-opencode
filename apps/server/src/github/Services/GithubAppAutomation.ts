@@ -26,11 +26,22 @@ export interface GithubWebhookRequest {
   readonly rawBody: Uint8Array;
 }
 
+export interface GithubAppRepository {
+  readonly nameWithOwner: string;
+  readonly description: string | null;
+  readonly url: string;
+  readonly sshUrl: string;
+  readonly isPrivate: boolean;
+}
+
 export interface GithubAppAutomationShape {
   readonly start: Effect.Effect<void, never, Scope.Scope>;
   readonly getSecretsStatus: Effect.Effect<GithubAppSecretsStatus>;
   readonly updateSecrets: (patch: GithubAppSecretsUpdate) => Effect.Effect<GithubAppSecretsStatus>;
   readonly handleWebhook: (request: GithubWebhookRequest) => Effect.Effect<GithubWebhookResponse>;
+  readonly listRepositories: (input: {
+    readonly limit: number;
+  }) => Effect.Effect<readonly GithubAppRepository[], GithubAppAutomationError>;
 }
 
 export class GithubAppAutomation extends ServiceMap.Service<

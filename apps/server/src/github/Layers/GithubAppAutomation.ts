@@ -27,6 +27,7 @@ import {
   GithubAppAutomation,
   GithubAppAutomationError,
   type GithubAppAutomationShape,
+  type GithubAppRepository,
   type GithubWebhookRequest,
   type GithubWebhookResponse,
 } from "../Services/GithubAppAutomation.ts";
@@ -1123,11 +1124,98 @@ const makeGithubAppAutomation = Effect.gen(function* () {
       ),
     );
 
+  const listRepositories: GithubAppAutomationShape["listRepositories"] = (input) =>
+    Effect.gen(function* () {
+      const settings = yield* serverSettings.getSettings;
+      const appId = settings.githubApp.appId.trim();
+      if (appId.length === 0) {
+        return yield* Effect.fail(
+          githubAppError("listRepositories", "GitHub App ID is not configured."),
+        );
+      }
+      const secrets = yield* readStoredSecrets();
+      const privateKeyPem = secrets.privateKeyPem?.trim() ?? "";
+      if (privateKeyPem.length === 0) {
+        return yield* Effect.fail(
+          githubAppError("listRepositories", "GitHub App private key is not configured."),
+        );
+      }
+      const jwt = yield* createAppJwt(appId, privateKeyPem);
+
+      // List all installations for this app
+      const installationsResponse = yield* githubApiRequest({
+        method: "GET",
+        path: "/app/installations",
+        token: jwt,
+      });
+      if (!installationsResponse.ok || !Array.isArray(installationsResponse.json)) {
+        return yield* Effect.fail(
+          githubAppError(
+            "listRepositories",
+            `Failed to list installations (status ${installationsResponse.status}).`,
+          ),
+        );
+      }
+
+      const installations = installationsResponse.json as Array<{ id?: number }>;
+      const allRepos: GithubAppRepository[] = [];
+
+      for (const installation of installations) {
+        const installationId = toPositiveInt(installation.id);
+        if (!installationId) continue;
+
+        const token = yield* getInstallationToken({
+          appId,
+          privateKeyPem,
+          installationId,
+        });
+
+        // Paginate through installation repos
+        let page = 1;
+        const perPage = Math.min(input.limit, 100);
+        while (allRepos.length < input.limit) {
+          const reposResponse = yield* githubApiRequest({
+            method: "GET",
+            path: `/installation/repositories?per_page=${perPage}&page=${page}`,
+            token,
+          });
+          if (!reposResponse.ok || !reposResponse.json || typeof reposResponse.json !== "object") {
+            break;
+          }
+          const body = reposResponse.json as { repositories?: unknown[] };
+          const repos = body.repositories;
+          if (!Array.isArray(repos) || repos.length === 0) break;
+
+          for (const repo of repos) {
+            if (allRepos.length >= input.limit) break;
+            const r = repo as Record<string, unknown>;
+            const fullName = toNonEmptyString(r.full_name);
+            const htmlUrl = toNonEmptyString(r.html_url);
+            const sshUrl = toNonEmptyString(r.ssh_url);
+            if (!fullName || !htmlUrl || !sshUrl) continue;
+            allRepos.push({
+              nameWithOwner: fullName,
+              description: typeof r.description === "string" ? r.description : null,
+              url: htmlUrl,
+              sshUrl,
+              isPrivate: r.private === true,
+            });
+          }
+
+          if (repos.length < perPage) break;
+          page++;
+        }
+      }
+
+      return allRepos;
+    });
+
   return {
     start,
     getSecretsStatus,
     updateSecrets,
     handleWebhook,
+    listRepositories,
   } satisfies GithubAppAutomationShape;
 });
 

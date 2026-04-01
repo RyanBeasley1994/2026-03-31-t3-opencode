@@ -943,37 +943,66 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
       case WS_METHODS.projectsListGithubRepositories: {
         const body = stripRequestTag(request.body);
         const limit = body.limit ?? GH_REPO_LIST_DEFAULT_LIMIT;
-        const ghRepoListArgs = [
-          "repo",
-          "list",
-          ...(githubOrg ? [githubOrg] : []),
-          "--limit",
-          String(limit),
-          "--json",
-          "nameWithOwner,description,url,sshUrl,isPrivate",
-        ];
-        const response = yield* gitHubCli
-          .execute({
-            cwd,
-            args: ghRepoListArgs,
-            timeoutMs: GH_REPO_LIST_TIMEOUT_MS,
-          })
-          .pipe(
-            Effect.mapError(
-              (cause) =>
-                new RouteRequestError({
-                  message: `Failed to list GitHub repositories: ${cause.detail}`,
-                }),
-            ),
-          );
 
-        const repositories = yield* Effect.try({
-          try: () => decodeRawGitHubProjectRepositoryList(JSON.parse(response.stdout)),
-          catch: (cause) =>
-            new RouteRequestError({
-              message: `Failed to parse GitHub repository list: ${String(cause)}`,
-            }),
-        });
+        // Try GitHub App first if configured, fall back to gh CLI
+        const settings = yield* serverSettingsManager.getSettings;
+        const useGithubApp = settings.githubApp.enabled && settings.githubApp.appId.trim().length > 0;
+
+        type RepoEntry = {
+          nameWithOwner: string;
+          description: string | null;
+          url: string;
+          sshUrl: string;
+          isPrivate: boolean;
+        };
+
+        let repositories: RepoEntry[];
+
+        if (useGithubApp) {
+          const appRepos = yield* githubAppAutomation
+            .listRepositories({ limit })
+            .pipe(
+              Effect.mapError(
+                (cause) =>
+                  new RouteRequestError({
+                    message: `Failed to list GitHub App repositories: ${cause.message}`,
+                  }),
+              ),
+            );
+          repositories = appRepos as RepoEntry[];
+        } else {
+          const ghRepoListArgs = [
+            "repo",
+            "list",
+            ...(githubOrg ? [githubOrg] : []),
+            "--limit",
+            String(limit),
+            "--json",
+            "nameWithOwner,description,url,sshUrl,isPrivate",
+          ];
+          const response = yield* gitHubCli
+            .execute({
+              cwd,
+              args: ghRepoListArgs,
+              timeoutMs: GH_REPO_LIST_TIMEOUT_MS,
+            })
+            .pipe(
+              Effect.mapError(
+                (cause) =>
+                  new RouteRequestError({
+                    message: `Failed to list GitHub repositories: ${cause.detail}`,
+                  }),
+              ),
+            );
+
+          repositories = yield* Effect.try({
+            try: () => decodeRawGitHubProjectRepositoryList(JSON.parse(response.stdout)),
+            catch: (cause) =>
+              new RouteRequestError({
+                message: `Failed to parse GitHub repository list: ${String(cause)}`,
+              }),
+          });
+        }
 
         const normalizedQuery = body.query?.trim().toLowerCase() ?? "";
         const filteredRepositories =
