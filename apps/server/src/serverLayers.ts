@@ -154,6 +154,7 @@ export function makeServerRuntimeServicesLayer() {
   const baseRuntimeLayer = Layer.mergeAll(
     orchestrationReactorLayer,
     GitCoreLive,
+    GitHubCliLive,
     gitManagerLayer,
     terminalLayer,
     KeybindingsLive,

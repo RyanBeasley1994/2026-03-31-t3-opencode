@@ -362,6 +362,48 @@ describe("wsNativeApi", () => {
     });
   });
 
+  it("forwards GitHub repository list requests to the websocket project method", async () => {
+    requestMock.mockResolvedValue({
+      repositories: [
+        {
+          nameWithOwner: "t3tools/opencode",
+          description: "OpenCode repository",
+          url: "https://github.com/t3tools/opencode",
+          sshUrl: "git@github.com:t3tools/opencode.git",
+          visibility: "public",
+        },
+      ],
+    });
+    const { createWsNativeApi } = await import("./wsNativeApi");
+
+    const api = createWsNativeApi();
+    await api.projects.listGithubRepositories({
+      query: "opencode",
+      limit: 25,
+    });
+
+    expect(requestMock).toHaveBeenCalledWith(WS_METHODS.projectsListGithubRepositories, {
+      query: "opencode",
+      limit: 25,
+    });
+  });
+
+  it("forwards GitHub repository clone requests to the websocket project method", async () => {
+    requestMock.mockResolvedValue({ workspaceRoot: "/tmp/opencode" });
+    const { createWsNativeApi } = await import("./wsNativeApi");
+
+    const api = createWsNativeApi();
+    await api.projects.cloneGithubRepository({
+      repository: "t3tools/opencode",
+      destinationPath: "/tmp/opencode",
+    });
+
+    expect(requestMock).toHaveBeenCalledWith(WS_METHODS.projectsCloneGithubRepository, {
+      repository: "t3tools/opencode",
+      destinationPath: "/tmp/opencode",
+    });
+  });
+
   it("uses no client timeout for git.runStackedAction", async () => {
     requestMock.mockResolvedValue({
       action: "commit",

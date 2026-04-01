@@ -57,6 +57,7 @@ import { Open, type OpenShape } from "./open";
 import { GitManager, type GitManagerShape } from "./git/Services/GitManager.ts";
 import type { GitCoreShape } from "./git/Services/GitCore.ts";
 import { GitCore } from "./git/Services/GitCore.ts";
+import { GitHubCli, type GitHubCliShape } from "./git/Services/GitHubCli.ts";
 import { GitCommandError, GitManagerError } from "./git/Errors.ts";
 import { MigrationError } from "@effect/sql-sqlite-bun/SqliteMigrator";
 import { AnalyticsService } from "./telemetry/Services/AnalyticsService.ts";
@@ -555,6 +556,7 @@ describe("WebSocket Server", () => {
       open?: OpenShape;
       gitManager?: GitManagerShape;
       gitCore?: Pick<GitCoreShape, "listBranches" | "initRepo" | "pullCurrentBranch">;
+      gitHubCli?: Pick<GitHubCliShape, "execute">;
       terminalManager?: TerminalManagerShape;
       serverSettings?: Partial<ServerSettings>;
     } = {},
@@ -594,6 +596,9 @@ describe("WebSocket Server", () => {
       options.gitManager ? Layer.succeed(GitManager, options.gitManager) : Layer.empty,
       options.gitCore
         ? Layer.succeed(GitCore, options.gitCore as unknown as GitCoreShape)
+        : Layer.empty,
+      options.gitHubCli
+        ? Layer.succeed(GitHubCli, options.gitHubCli as unknown as GitHubCliShape)
         : Layer.empty,
       options.terminalManager
         ? Layer.succeed(TerminalManager, options.terminalManager)
@@ -1777,6 +1782,116 @@ describe("WebSocket Server", () => {
         expect.objectContaining({ path: "src/components/Composer.tsx", kind: "file" }),
       ]),
       truncated: false,
+    });
+  });
+
+  it("supports projects.listGithubRepositories", async () => {
+    const execute = vi.fn(() =>
+      Effect.succeed({
+        stdout: JSON.stringify([
+          {
+            nameWithOwner: "t3tools/opencode",
+            description: "OpenCode app",
+            url: "https://github.com/t3tools/opencode",
+            sshUrl: "git@github.com:t3tools/opencode.git",
+            isPrivate: false,
+          },
+          {
+            nameWithOwner: "acme/internal-admin",
+            description: "Internal admin panel",
+            url: "https://github.com/acme/internal-admin",
+            sshUrl: "git@github.com:acme/internal-admin.git",
+            isPrivate: true,
+          },
+        ]),
+        stderr: "",
+        code: 0,
+        signal: null,
+        timedOut: false,
+      }),
+    );
+
+    server = await createTestServer({
+      cwd: "/test",
+      gitHubCli: {
+        execute,
+      },
+    });
+    const addr = server.address();
+    const port = typeof addr === "object" && addr !== null ? addr.port : 0;
+
+    const [ws] = await connectAndAwaitWelcome(port);
+    connections.push(ws);
+
+    const response = await sendRequest(ws, WS_METHODS.projectsListGithubRepositories, {
+      query: "open",
+      limit: 25,
+    });
+
+    expect(response.error).toBeUndefined();
+    expect(response.result).toEqual({
+      repositories: [
+        {
+          nameWithOwner: "t3tools/opencode",
+          description: "OpenCode app",
+          url: "https://github.com/t3tools/opencode",
+          sshUrl: "git@github.com:t3tools/opencode.git",
+          visibility: "public",
+        },
+      ],
+    });
+    expect(execute).toHaveBeenCalledWith({
+      cwd: "/test",
+      args: [
+        "repo",
+        "list",
+        "--limit",
+        "25",
+        "--json",
+        "nameWithOwner,description,url,sshUrl,isPrivate",
+      ],
+      timeoutMs: 30_000,
+    });
+  });
+
+  it("supports projects.cloneGithubRepository", async () => {
+    const execute = vi.fn(() =>
+      Effect.succeed({
+        stdout: "",
+        stderr: "",
+        code: 0,
+        signal: null,
+        timedOut: false,
+      }),
+    );
+    const workspaceBase = makeTempDir("t3code-ws-clone-repo-");
+    const destinationPath = path.join(workspaceBase, "opencode");
+
+    server = await createTestServer({
+      cwd: "/test",
+      gitHubCli: {
+        execute,
+      },
+    });
+    const addr = server.address();
+    const port = typeof addr === "object" && addr !== null ? addr.port : 0;
+
+    const [ws] = await connectAndAwaitWelcome(port);
+    connections.push(ws);
+
+    const response = await sendRequest(ws, WS_METHODS.projectsCloneGithubRepository, {
+      repository: "t3tools/opencode",
+      destinationPath,
+    });
+
+    expect(response.error).toBeUndefined();
+    expect(response.result).toEqual({
+      workspaceRoot: destinationPath,
+    });
+    expect(execute).toHaveBeenCalledWith({
+      cwd: "/test",
+      args: ["repo", "clone", "t3tools/opencode", destinationPath],
+      timeoutMs: 120_000,
     });
   });
 

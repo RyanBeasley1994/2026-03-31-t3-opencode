@@ -35,7 +35,12 @@ import {
   TerminalWriteInput,
 } from "./terminal";
 import { KeybindingRule } from "./keybindings";
-import { ProjectSearchEntriesInput, ProjectWriteFileInput } from "./project";
+import {
+  ProjectCloneGithubRepositoryInput,
+  ProjectListGithubRepositoriesInput,
+  ProjectSearchEntriesInput,
+  ProjectWriteFileInput,
+} from "./project";
 import { OpenInEditorInput } from "./editor";
 import { ServerConfigUpdatedPayload, ServerProviderUpdatedPayload } from "./server";
 import { GithubAppSecretsUpdate, ServerSettingsPatch } from "./settings";
@@ -49,6 +54,8 @@ export const WS_METHODS = {
   projectsRemove: "projects.remove",
   projectsSearchEntries: "projects.searchEntries",
   projectsWriteFile: "projects.writeFile",
+  projectsListGithubRepositories: "projects.listGithubRepositories",
+  projectsCloneGithubRepository: "projects.cloneGithubRepository",
 
   // Shell methods
   shellOpenInEditor: "shell.openInEditor",
@@ -120,6 +127,8 @@ const WebSocketRequestBody = Schema.Union([
   // Project Search
   tagRequestBody(WS_METHODS.projectsSearchEntries, ProjectSearchEntriesInput),
   tagRequestBody(WS_METHODS.projectsWriteFile, ProjectWriteFileInput),
+  tagRequestBody(WS_METHODS.projectsListGithubRepositories, ProjectListGithubRepositoriesInput),
+  tagRequestBody(WS_METHODS.projectsCloneGithubRepository, ProjectCloneGithubRepositoryInput),
 
   // Shell methods
   tagRequestBody(WS_METHODS.shellOpenInEditor, OpenInEditorInput),

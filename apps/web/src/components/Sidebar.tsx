@@ -40,6 +40,7 @@ import {
   DEFAULT_MODEL_BY_PROVIDER,
   type DesktopUpdateState,
   ProjectId,
+  type ProjectGithubRepository,
   ThreadId,
   type GitStatusResult,
   type ResolvedKeybindingsConfig,
@@ -87,6 +88,7 @@ import {
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "./ui/alert";
 import { Button } from "./ui/button";
 import { Menu, MenuGroup, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "./ui/menu";
+import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "./ui/select";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import {
   SidebarContent,
@@ -393,6 +395,12 @@ export default function Sidebar() {
   const [isPickingFolder, setIsPickingFolder] = useState(false);
   const [isAddingProject, setIsAddingProject] = useState(false);
   const [addProjectError, setAddProjectError] = useState<string | null>(null);
+  const [cloneFromGithub, setCloneFromGithub] = useState(false);
+  const [githubRepositories, setGithubRepositories] = useState<
+    ReadonlyArray<ProjectGithubRepository>
+  >([]);
+  const [isLoadingGithubRepositories, setIsLoadingGithubRepositories] = useState(false);
+  const [selectedGithubRepository, setSelectedGithubRepository] = useState<string>("");
   const addProjectInputRef = useRef<HTMLInputElement | null>(null);
   const [renamingThreadId, setRenamingThreadId] = useState<ThreadId | null>(null);
   const [renamingTitle, setRenamingTitle] = useState("");
@@ -418,6 +426,13 @@ export default function Sidebar() {
   const platform = navigator.platform;
   const shouldBrowseForProjectImmediately = isElectron && !isLinuxDesktop;
   const shouldShowProjectPathEntry = addingProject && !shouldBrowseForProjectImmediately;
+  const selectedGithubRepositoryDetails = useMemo(
+    () =>
+      githubRepositories.find(
+        (repository) => repository.nameWithOwner === selectedGithubRepository,
+      ) ?? null,
+    [githubRepositories, selectedGithubRepository],
+  );
   const projectCwdById = useMemo(
     () => new Map(projects.map((project) => [project.id, project.cwd] as const)),
     [projects],
@@ -536,8 +551,34 @@ export default function Sidebar() {
     [appSettings.sidebarThreadSortOrder, navigate, threads],
   );
 
+  const loadGithubRepositories = useCallback(async () => {
+    const api = readNativeApi();
+    if (!api) return;
+    setIsLoadingGithubRepositories(true);
+    try {
+      const result = await api.projects.listGithubRepositories({ limit: 100 });
+      setGithubRepositories(result.repositories);
+      setAddProjectError(null);
+      setSelectedGithubRepository((current) => {
+        if (
+          current.length > 0 &&
+          result.repositories.some((repo) => repo.nameWithOwner === current)
+        ) {
+          return current;
+        }
+        return result.repositories[0]?.nameWithOwner ?? "";
+      });
+    } catch (error) {
+      const description =
+        error instanceof Error ? error.message : "An error occurred while loading repositories.";
+      setAddProjectError(description);
+    } finally {
+      setIsLoadingGithubRepositories(false);
+    }
+  }, []);
+
   const addProjectFromPath = useCallback(
-    async (rawCwd: string) => {
+    async (rawCwd: string, options?: { cloneRepository?: string | undefined }) => {
       const cwd = rawCwd.trim();
       if (!cwd || isAddingProject) return;
       const api = readNativeApi();
@@ -548,6 +589,9 @@ export default function Sidebar() {
         setIsAddingProject(false);
         setNewCwd("");
         setAddProjectError(null);
+        setCloneFromGithub(false);
+        setGithubRepositories([]);
+        setSelectedGithubRepository("");
         setAddingProject(false);
       };
 
@@ -562,6 +606,12 @@ export default function Sidebar() {
       const createdAt = new Date().toISOString();
       const title = cwd.split(/[/\\]/).findLast(isNonEmptyString) ?? cwd;
       try {
+        if (options?.cloneRepository) {
+          await api.projects.cloneGithubRepository({
+            repository: options.cloneRepository,
+            destinationPath: cwd,
+          });
+        }
         await api.orchestration.dispatchCommand({
           type: "project.create",
           commandId: newCommandId(),
@@ -605,10 +655,21 @@ export default function Sidebar() {
   );
 
   const handleAddProject = () => {
+    if (cloneFromGithub) {
+      if (selectedGithubRepository.length === 0) {
+        setAddProjectError("Select a GitHub repository to clone.");
+        return;
+      }
+      void addProjectFromPath(newCwd, { cloneRepository: selectedGithubRepository });
+      return;
+    }
     void addProjectFromPath(newCwd);
   };
 
-  const canAddProject = newCwd.trim().length > 0 && !isAddingProject;
+  const canAddProject =
+    newCwd.trim().length > 0 &&
+    !isAddingProject &&
+    (!cloneFromGithub || (selectedGithubRepository.length > 0 && !isLoadingGithubRepositories));
 
   const handlePickFolder = async () => {
     const api = readNativeApi();
@@ -634,7 +695,15 @@ export default function Sidebar() {
       void handlePickFolder();
       return;
     }
-    setAddingProject((prev) => !prev);
+    setAddingProject((prev) => {
+      const next = !prev;
+      if (!next) {
+        setCloneFromGithub(false);
+        setGithubRepositories([]);
+        setSelectedGithubRepository("");
+      }
+      return next;
+    });
   };
 
   const cancelRename = useCallback(() => {
@@ -1948,6 +2017,80 @@ export default function Sidebar() {
                       {isPickingFolder ? "Picking folder..." : "Browse for folder"}
                     </button>
                   )}
+                  <div className="mb-1.5 space-y-1">
+                    <label className="flex items-center gap-2 px-0.5 text-[11px] text-muted-foreground/80">
+                      <input
+                        type="checkbox"
+                        className="size-3.5 rounded border-border bg-secondary"
+                        checked={cloneFromGithub}
+                        onChange={(event) => {
+                          const enabled = event.target.checked;
+                          setCloneFromGithub(enabled);
+                          setAddProjectError(null);
+                          if (!enabled) {
+                            setSelectedGithubRepository("");
+                            return;
+                          }
+                          if (githubRepositories.length === 0) {
+                            void loadGithubRepositories();
+                          }
+                        }}
+                        disabled={isAddingProject}
+                      />
+                      Clone from GitHub repository
+                    </label>
+                    {cloneFromGithub && (
+                      <div className="space-y-1">
+                        <div className="flex gap-1.5">
+                          <Select
+                            value={selectedGithubRepository}
+                            onValueChange={(value) => {
+                              setSelectedGithubRepository(value ?? "");
+                              setAddProjectError(null);
+                            }}
+                            disabled={isAddingProject || isLoadingGithubRepositories}
+                          >
+                            <SelectTrigger size="sm" className="min-w-0 flex-1 rounded-md">
+                              <SelectValue
+                                placeholder={
+                                  isLoadingGithubRepositories
+                                    ? "Loading repositories..."
+                                    : githubRepositories.length === 0
+                                      ? "No repositories found"
+                                      : "Select repository"
+                                }
+                              />
+                            </SelectTrigger>
+                            <SelectPopup>
+                              {githubRepositories.map((repository) => (
+                                <SelectItem
+                                  key={repository.nameWithOwner}
+                                  value={repository.nameWithOwner}
+                                >
+                                  {repository.nameWithOwner}
+                                </SelectItem>
+                              ))}
+                            </SelectPopup>
+                          </Select>
+                          <button
+                            type="button"
+                            className="shrink-0 rounded-md border border-border bg-secondary px-2 py-1 text-[11px] text-foreground/80 transition-colors duration-150 hover:bg-accent hover:text-foreground disabled:opacity-60"
+                            onClick={() => void loadGithubRepositories()}
+                            disabled={isLoadingGithubRepositories || isAddingProject}
+                          >
+                            {isLoadingGithubRepositories ? "Loading..." : "Reload"}
+                          </button>
+                        </div>
+                        {selectedGithubRepositoryDetails && (
+                          <p className="px-0.5 text-[11px] leading-tight text-muted-foreground/70">
+                            {selectedGithubRepositoryDetails.description?.trim().length
+                              ? selectedGithubRepositoryDetails.description
+                              : `${selectedGithubRepositoryDetails.visibility} repository`}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
                   <div className="flex gap-1.5">
                     <input
                       ref={addProjectInputRef}
@@ -1967,6 +2110,9 @@ export default function Sidebar() {
                         if (event.key === "Escape") {
                           setAddingProject(false);
                           setAddProjectError(null);
+                          setCloneFromGithub(false);
+                          setGithubRepositories([]);
+                          setSelectedGithubRepository("");
                         }
                       }}
                       autoFocus
@@ -1977,7 +2123,7 @@ export default function Sidebar() {
                       onClick={handleAddProject}
                       disabled={!canAddProject}
                     >
-                      {isAddingProject ? "Adding..." : "Add"}
+                      {isAddingProject ? "Adding..." : cloneFromGithub ? "Clone + Add" : "Add"}
                     </button>
                   </div>
                   {addProjectError && (
@@ -1992,6 +2138,9 @@ export default function Sidebar() {
                       onClick={() => {
                         setAddingProject(false);
                         setAddProjectError(null);
+                        setCloneFromGithub(false);
+                        setGithubRepositories([]);
+                        setSelectedGithubRepository("");
                       }}
                     >
                       Cancel

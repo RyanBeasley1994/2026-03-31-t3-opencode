@@ -61,6 +61,7 @@ import { clamp } from "effect/Number";
 import { Open, resolveAvailableEditors } from "./open";
 import { ServerConfig } from "./config";
 import { GitCore } from "./git/Services/GitCore.ts";
+import { GitHubCli } from "./git/Services/GitHubCli.ts";
 import { tryHandleProjectFaviconRequest } from "./projectFaviconRoute";
 import {
   ATTACHMENTS_ROUTE_PREFIX,
@@ -159,6 +160,23 @@ function toPosixRelativePath(input: string): string {
   return input.replaceAll("\\", "/");
 }
 
+const GH_REPO_LIST_DEFAULT_LIMIT = 60;
+const GH_REPO_LIST_TIMEOUT_MS = 30_000;
+const GH_REPO_CLONE_TIMEOUT_MS = 120_000;
+
+const RawGitHubProjectRepositoryList = Schema.Array(
+  Schema.Struct({
+    nameWithOwner: Schema.String,
+    description: Schema.NullOr(Schema.String),
+    url: Schema.String,
+    sshUrl: Schema.String,
+    isPrivate: Schema.Boolean,
+  }),
+);
+const decodeRawGitHubProjectRepositoryList = Schema.decodeUnknownSync(
+  RawGitHubProjectRepositoryList,
+);
+
 function resolveWorkspaceWritePath(params: {
   workspaceRoot: string;
   relativePath: string;
@@ -241,6 +259,7 @@ export type ServerRuntimeServices =
   | ServerCoreRuntimeServices
   | GitManager
   | GitCore
+  | GitHubCli
   | TerminalManager
   | Keybindings
   | ServerSettingsService
@@ -291,6 +310,7 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
   const githubAppAutomation = yield* GithubAppAutomation;
   const providerRegistry = yield* ProviderRegistry;
   const git = yield* GitCore;
+  const gitHubCli = yield* GitHubCli;
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
 
@@ -850,6 +870,89 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
           ),
         );
         return { relativePath: target.relativePath };
+      }
+
+      case WS_METHODS.projectsListGithubRepositories: {
+        const body = stripRequestTag(request.body);
+        const limit = body.limit ?? GH_REPO_LIST_DEFAULT_LIMIT;
+        const response = yield* gitHubCli
+          .execute({
+            cwd,
+            args: [
+              "repo",
+              "list",
+              "--limit",
+              String(limit),
+              "--json",
+              "nameWithOwner,description,url,sshUrl,isPrivate",
+            ],
+            timeoutMs: GH_REPO_LIST_TIMEOUT_MS,
+          })
+          .pipe(
+            Effect.mapError(
+              (cause) =>
+                new RouteRequestError({
+                  message: `Failed to list GitHub repositories: ${cause.detail}`,
+                }),
+            ),
+          );
+
+        const repositories = yield* Effect.try({
+          try: () => decodeRawGitHubProjectRepositoryList(JSON.parse(response.stdout)),
+          catch: (cause) =>
+            new RouteRequestError({
+              message: `Failed to parse GitHub repository list: ${String(cause)}`,
+            }),
+        });
+
+        const normalizedQuery = body.query?.trim().toLowerCase() ?? "";
+        const filteredRepositories =
+          normalizedQuery.length === 0
+            ? repositories
+            : repositories.filter((repository) => {
+                if (repository.nameWithOwner.toLowerCase().includes(normalizedQuery)) {
+                  return true;
+                }
+                return repository.description?.toLowerCase().includes(normalizedQuery) ?? false;
+              });
+
+        return {
+          repositories: filteredRepositories.map((repository) => ({
+            nameWithOwner: repository.nameWithOwner,
+            description: repository.description,
+            url: repository.url,
+            sshUrl: repository.sshUrl,
+            visibility: repository.isPrivate ? ("private" as const) : ("public" as const),
+          })),
+        };
+      }
+
+      case WS_METHODS.projectsCloneGithubRepository: {
+        const body = stripRequestTag(request.body);
+        const destinationPath = path.resolve(yield* expandHomePath(body.destinationPath.trim()));
+        yield* fileSystem.makeDirectory(path.dirname(destinationPath), { recursive: true }).pipe(
+          Effect.mapError(
+            (cause) =>
+              new RouteRequestError({
+                message: `Failed to prepare clone destination: ${String(cause)}`,
+              }),
+          ),
+        );
+        yield* gitHubCli
+          .execute({
+            cwd,
+            args: ["repo", "clone", body.repository, destinationPath],
+            timeoutMs: GH_REPO_CLONE_TIMEOUT_MS,
+          })
+          .pipe(
+            Effect.mapError(
+              (cause) =>
+                new RouteRequestError({
+                  message: `Failed to clone GitHub repository: ${cause.detail}`,
+                }),
+            ),
+          );
+        return { workspaceRoot: destinationPath };
       }
 
       case WS_METHODS.shellOpenInEditor: {

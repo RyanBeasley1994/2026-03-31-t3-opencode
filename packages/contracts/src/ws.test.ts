@@ -73,6 +73,34 @@ it.effect("accepts git.preparePullRequestThread requests", () =>
   }),
 );
 
+it.effect("accepts projects.listGithubRepositories requests", () =>
+  Effect.gen(function* () {
+    const parsed = yield* decodeWebSocketRequest({
+      id: "req-project-repos-1",
+      body: {
+        _tag: WS_METHODS.projectsListGithubRepositories,
+        query: "opencode",
+        limit: 25,
+      },
+    });
+    assert.strictEqual(parsed.body._tag, WS_METHODS.projectsListGithubRepositories);
+  }),
+);
+
+it.effect("accepts projects.cloneGithubRepository requests", () =>
+  Effect.gen(function* () {
+    const parsed = yield* decodeWebSocketRequest({
+      id: "req-project-clone-1",
+      body: {
+        _tag: WS_METHODS.projectsCloneGithubRepository,
+        repository: "t3tools/opencode",
+        destinationPath: "/tmp/opencode",
+      },
+    });
+    assert.strictEqual(parsed.body._tag, WS_METHODS.projectsCloneGithubRepository);
+  }),
+);
+
 it.effect("accepts github app secrets update requests", () =>
   Effect.gen(function* () {
     const parsed = yield* decodeWebSocketRequest({

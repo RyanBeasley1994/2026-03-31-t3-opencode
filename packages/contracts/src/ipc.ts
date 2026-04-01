@@ -20,6 +20,10 @@ import type {
   GitStatusResult,
 } from "./git";
 import type {
+  ProjectCloneGithubRepositoryInput,
+  ProjectCloneGithubRepositoryResult,
+  ProjectListGithubRepositoriesInput,
+  ProjectListGithubRepositoriesResult,
   ProjectSearchEntriesInput,
   ProjectSearchEntriesResult,
   ProjectWriteFileInput,
@@ -146,6 +150,12 @@ export interface NativeApi {
   projects: {
     searchEntries: (input: ProjectSearchEntriesInput) => Promise<ProjectSearchEntriesResult>;
     writeFile: (input: ProjectWriteFileInput) => Promise<ProjectWriteFileResult>;
+    listGithubRepositories: (
+      input?: ProjectListGithubRepositoriesInput,
+    ) => Promise<ProjectListGithubRepositoriesResult>;
+    cloneGithubRepository: (
+      input: ProjectCloneGithubRepositoryInput,
+    ) => Promise<ProjectCloneGithubRepositoryResult>;
   };
   shell: {
     openInEditor: (cwd: string, editor: EditorId) => Promise<void>;
