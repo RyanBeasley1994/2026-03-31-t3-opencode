@@ -87,7 +87,6 @@ const toPositiveInt = (value: unknown): number | null => {
   return value;
 };
 
-
 const hasStartTrigger = (commentBody: string, botLogin: string): boolean => {
   const escapedLogin = botLogin.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const mentionPattern = new RegExp(`@${escapedLogin}\\b`, "i");
@@ -1056,7 +1055,9 @@ const makeGithubAppAutomation = Effect.gen(function* () {
         );
       }
       const jwt = yield* createAppJwt(appId, privateKeyPem).pipe(
-        Effect.mapError((cause) => githubAppError("listRepositories", "Failed to create JWT.", cause)),
+        Effect.mapError((cause) =>
+          githubAppError("listRepositories", "Failed to create JWT.", cause),
+        ),
       );
 
       // List all installations for this app
@@ -1064,9 +1065,7 @@ const makeGithubAppAutomation = Effect.gen(function* () {
         method: "GET",
         path: "/app/installations",
         token: jwt,
-      }).pipe(
-        Effect.mapError((cause) => githubAppError("listRepositories", cause.message, cause)),
-      );
+      }).pipe(Effect.mapError((cause) => githubAppError("listRepositories", cause.message, cause)));
       if (!installationsResponse.ok || !Array.isArray(installationsResponse.json)) {
         return yield* Effect.fail(
           githubAppError(

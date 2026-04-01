@@ -28,7 +28,10 @@ export interface GitHubApiResponse {
 
 // ── JWT ──────────────────────────────────────────────────────────────
 
-export const createAppJwt = (appId: string, privateKeyPem: string): Effect.Effect<string, GitHubApiError> =>
+export const createAppJwt = (
+  appId: string,
+  privateKeyPem: string,
+): Effect.Effect<string, GitHubApiError> =>
   Effect.try({
     try: () => {
       const now = Math.floor(Date.now() / 1000);
@@ -48,7 +51,8 @@ export const createAppJwt = (appId: string, privateKeyPem: string): Effect.Effec
         .sign(privateKeyPem, "base64url");
       return `${signingInput}.${signature}`;
     },
-    catch: (cause) => new GitHubApiError({ detail: `Failed to create GitHub app JWT: ${cause}`, cause }),
+    catch: (cause) =>
+      new GitHubApiError({ detail: `Failed to create GitHub app JWT: ${cause}`, cause }),
   });
 
 // ── API request ──────────────────────────────────────────────────────

@@ -10,7 +10,6 @@ import { Effect, FileSystem, Layer, Path } from "effect";
 
 import { ServerConfig } from "../../config.ts";
 import {
-  type GitHubApiError,
   getInstallationIdForRepo,
   getInstallationToken,
   githubApiRequest,
@@ -39,19 +38,33 @@ const makeGitHubApi = Effect.gen(function* () {
 
   const readPrivateKey = (): Effect.Effect<string, GitHubCliError> =>
     Effect.gen(function* () {
-      const exists = yield* fs.exists(secretsPath).pipe(
-        Effect.mapError((cause) => apiError("readPrivateKey", "Failed to check secrets file.", cause)),
-      );
+      const exists = yield* fs
+        .exists(secretsPath)
+        .pipe(
+          Effect.mapError((cause) =>
+            apiError("readPrivateKey", "Failed to check secrets file.", cause),
+          ),
+        );
       if (!exists) {
-        return yield* apiError("readPrivateKey", "GitHub App private key not configured. Set it in Settings > GitHub App.");
+        return yield* apiError(
+          "readPrivateKey",
+          "GitHub App private key not configured. Set it in Settings > GitHub App.",
+        );
       }
-      const raw = yield* fs.readFileString(secretsPath).pipe(
-        Effect.mapError((cause) => apiError("readPrivateKey", "Failed to read secrets file.", cause)),
-      );
+      const raw = yield* fs
+        .readFileString(secretsPath)
+        .pipe(
+          Effect.mapError((cause) =>
+            apiError("readPrivateKey", "Failed to read secrets file.", cause),
+          ),
+        );
       const parsed = JSON.parse(raw) as { privateKeyPem?: string };
       const pem = parsed.privateKeyPem?.trim() ?? "";
       if (pem.length === 0) {
-        return yield* apiError("readPrivateKey", "GitHub App private key is empty. Set it in Settings > GitHub App.");
+        return yield* apiError(
+          "readPrivateKey",
+          "GitHub App private key is empty. Set it in Settings > GitHub App.",
+        );
       }
       return pem;
     });
@@ -64,19 +77,27 @@ const makeGitHubApi = Effect.gen(function* () {
       });
       const parsed = parseRepoFromRemoteUrl(result.stdout.trim());
       if (!parsed) {
-        return yield* apiError("getRepoContext", "Could not parse GitHub owner/repo from origin remote URL.");
+        return yield* apiError(
+          "getRepoContext",
+          "Could not parse GitHub owner/repo from origin remote URL.",
+        );
       }
       return parsed;
     });
 
-  const getToken = (cwd: string): Effect.Effect<{ token: string; owner: string; name: string }, GitHubCliError> =>
+  const getToken = (
+    cwd: string,
+  ): Effect.Effect<{ token: string; owner: string; name: string }, GitHubCliError> =>
     Effect.gen(function* () {
       const settings = yield* serverSettings.getSettings.pipe(
         Effect.mapError((cause) => apiError("getToken", "Failed to read server settings.", cause)),
       );
       const appId = settings.githubApp.appId.trim();
       if (appId.length === 0) {
-        return yield* apiError("getToken", "GitHub App ID is not configured. Set it in Settings > GitHub App.");
+        return yield* apiError(
+          "getToken",
+          "GitHub App ID is not configured. Set it in Settings > GitHub App.",
+        );
       }
       const privateKeyPem = yield* readPrivateKey();
       const repo = yield* getRepoContext(cwd);
@@ -85,17 +106,25 @@ const makeGitHubApi = Effect.gen(function* () {
         privateKeyPem,
         owner: repo.owner,
         repo: repo.name,
-      }).pipe(Effect.mapError((cause) => apiError("getToken", `Failed to get installation: ${cause.message}`, cause)));
+      }).pipe(
+        Effect.mapError((cause) =>
+          apiError("getToken", `Failed to get installation: ${cause.message}`, cause),
+        ),
+      );
       const token = yield* getInstallationToken({
         appId,
         privateKeyPem,
         installationId,
-      }).pipe(Effect.mapError((cause) => apiError("getToken", `Failed to get installation token: ${cause.message}`, cause)));
+      }).pipe(
+        Effect.mapError((cause) =>
+          apiError("getToken", `Failed to get installation token: ${cause.message}`, cause),
+        ),
+      );
       return { token, owner: repo.owner, name: repo.name };
     });
 
   const execute: GitHubCliShape["execute"] = () =>
-    apiError("execute", "Raw execute is not supported in GitHub API mode.");
+    Effect.fail(apiError("execute", "Raw execute is not supported in GitHub API mode."));
 
   const listOpenPullRequests: GitHubCliShape["listOpenPullRequests"] = (input) =>
     Effect.gen(function* () {
@@ -149,7 +178,10 @@ const makeGitHubApi = Effect.gen(function* () {
             limit: 1,
           });
           if (prs.length === 0) {
-            return yield* apiError("getPullRequest", `Pull request not found for reference: ${input.reference}`);
+            return yield* apiError(
+              "getPullRequest",
+              `Pull request not found for reference: ${input.reference}`,
+            );
           }
           return prs[0]!;
         }
@@ -162,7 +194,10 @@ const makeGitHubApi = Effect.gen(function* () {
       }).pipe(Effect.mapError((cause) => apiError("getPullRequest", cause.message, cause)));
 
       if (!response.ok || !response.json || typeof response.json !== "object") {
-        return yield* apiError("getPullRequest", `Pull request #${prNumber} not found (status ${response.status}).`);
+        return yield* apiError(
+          "getPullRequest",
+          `Pull request #${prNumber} not found (status ${response.status}).`,
+        );
       }
 
       const pr = response.json as Record<string, unknown>;
@@ -190,7 +225,7 @@ const makeGitHubApi = Effect.gen(function* () {
         isCrossRepository,
         headRepositoryNameWithOwner: headRepoFullName ?? null,
         headRepositoryOwnerLogin: headRepo?.owner
-          ? ((headRepo.owner as Record<string, unknown>).login as string) ?? null
+          ? (((headRepo.owner as Record<string, unknown>).login as string) ?? null)
           : null,
       } satisfies GitHubPullRequestSummary;
     });
@@ -206,7 +241,10 @@ const makeGitHubApi = Effect.gen(function* () {
       }).pipe(Effect.mapError((cause) => apiError("getRepositoryCloneUrls", cause.message, cause)));
 
       if (!response.ok || !response.json || typeof response.json !== "object") {
-        return yield* apiError("getRepositoryCloneUrls", `Repository ${input.repository} not found (status ${response.status}).`);
+        return yield* apiError(
+          "getRepositoryCloneUrls",
+          `Repository ${input.repository} not found (status ${response.status}).`,
+        );
       }
 
       const repo = response.json as Record<string, unknown>;
@@ -222,9 +260,13 @@ const makeGitHubApi = Effect.gen(function* () {
       const { token, owner, name } = yield* getToken(input.cwd);
 
       // Read body from file
-      const body = yield* fs.readFileString(input.bodyFile).pipe(
-        Effect.mapError((cause) => apiError("createPullRequest", "Failed to read PR body file.", cause)),
-      );
+      const body = yield* fs
+        .readFileString(input.bodyFile)
+        .pipe(
+          Effect.mapError((cause) =>
+            apiError("createPullRequest", "Failed to read PR body file.", cause),
+          ),
+        );
 
       // headSelector may be "owner:branch" for cross-repo PRs
       const head = input.headSelector;
@@ -244,7 +286,7 @@ const makeGitHubApi = Effect.gen(function* () {
       if (!response.ok) {
         const errorBody =
           response.json && typeof response.json === "object"
-            ? ((response.json as Record<string, unknown>).message as string) ?? ""
+            ? (((response.json as Record<string, unknown>).message as string) ?? "")
             : "";
         return yield* apiError(
           "createPullRequest",
@@ -294,22 +336,18 @@ const makeGitHubApi = Effect.gen(function* () {
       const prNumber = pr.number as number;
 
       // Fetch the PR head and create/update local branch
-      const fetchArgs = [
-        "fetch",
-        "origin",
-        `pull/${prNumber}/head:${headRef}`,
-      ];
+      const fetchArgs = ["fetch", "origin", `pull/${prNumber}/head:${headRef}`];
       yield* Effect.tryPromise({
         try: () => runProcess("git", fetchArgs, { cwd: input.cwd, timeoutMs: 30_000 }),
-        catch: (cause) => apiError("checkoutPullRequest", `Failed to fetch PR head: ${cause}`, cause),
+        catch: (cause) =>
+          apiError("checkoutPullRequest", `Failed to fetch PR head: ${cause}`, cause),
       });
 
-      const checkoutArgs = input.force
-        ? ["checkout", "--force", headRef]
-        : ["checkout", headRef];
+      const checkoutArgs = input.force ? ["checkout", "--force", headRef] : ["checkout", headRef];
       yield* Effect.tryPromise({
         try: () => runProcess("git", checkoutArgs, { cwd: input.cwd, timeoutMs: 10_000 }),
-        catch: (cause) => apiError("checkoutPullRequest", `Failed to checkout branch: ${cause}`, cause),
+        catch: (cause) =>
+          apiError("checkoutPullRequest", `Failed to checkout branch: ${cause}`, cause),
       });
     });
 
