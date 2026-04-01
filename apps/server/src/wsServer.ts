@@ -949,14 +949,14 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
         const useGithubApp = settings.githubApp.enabled && settings.githubApp.appId.trim().length > 0;
 
         type RepoEntry = {
-          nameWithOwner: string;
-          description: string | null;
-          url: string;
-          sshUrl: string;
-          isPrivate: boolean;
+          readonly nameWithOwner: string;
+          readonly description: string | null;
+          readonly url: string;
+          readonly sshUrl: string;
+          readonly isPrivate: boolean;
         };
 
-        let repositories: RepoEntry[];
+        let repositories: readonly RepoEntry[];
 
         if (useGithubApp) {
           const appRepos = yield* githubAppAutomation

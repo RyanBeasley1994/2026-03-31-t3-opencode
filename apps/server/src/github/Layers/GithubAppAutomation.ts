@@ -1126,7 +1126,11 @@ const makeGithubAppAutomation = Effect.gen(function* () {
 
   const listRepositories: GithubAppAutomationShape["listRepositories"] = (input) =>
     Effect.gen(function* () {
-      const settings = yield* serverSettings.getSettings;
+      const settings = yield* serverSettings.getSettings.pipe(
+        Effect.mapError(
+          (cause) => githubAppError("listRepositories", "Failed to read server settings.", cause),
+        ),
+      );
       const appId = settings.githubApp.appId.trim();
       if (appId.length === 0) {
         return yield* Effect.fail(
