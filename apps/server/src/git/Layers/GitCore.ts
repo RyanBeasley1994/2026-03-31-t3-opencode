@@ -1295,6 +1295,7 @@ export const makeGitCore = Effect.fn("makeGitCore")(function* (options?: {
           ["push", "-u", publishRemoteName, branch],
           false,
           pushEnv,
+          PUSH_TIMEOUT_MS,
         );
         return {
           status: "pushed" as const,
@@ -1314,6 +1315,7 @@ export const makeGitCore = Effect.fn("makeGitCore")(function* (options?: {
           ["push", currentUpstream.remoteName, `HEAD:${currentUpstream.upstreamBranch}`],
           false,
           pushEnv,
+          PUSH_TIMEOUT_MS,
         );
         return {
           status: "pushed" as const,
@@ -1323,7 +1325,14 @@ export const makeGitCore = Effect.fn("makeGitCore")(function* (options?: {
         };
       }
 
-      yield* runGit("GitCore.pushCurrentBranch.push", cwd, ["push"], false, pushEnv);
+      yield* runGit(
+        "GitCore.pushCurrentBranch.push",
+        cwd,
+        ["push"],
+        false,
+        pushEnv,
+        PUSH_TIMEOUT_MS,
+      );
       return {
         status: "pushed" as const,
         branch,
