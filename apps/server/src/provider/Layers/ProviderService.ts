@@ -355,10 +355,13 @@ const makeProviderService = (options?: ProviderServiceLiveOptions) =>
         }
         const persistedBinding = Option.getOrUndefined(yield* directory.getBinding(threadId));
         const effectiveResumeCursor =
-          input.resumeCursor ??
-          (persistedBinding?.provider === input.provider
-            ? persistedBinding.resumeCursor
-            : undefined);
+          input.resumeCursor === null
+            ? undefined
+            : input.resumeCursor !== undefined
+              ? input.resumeCursor
+              : persistedBinding?.provider === input.provider
+                ? persistedBinding.resumeCursor
+                : undefined;
         const adapter = yield* registry.getByProvider(input.provider);
         const session = yield* adapter.startSession({
           ...input,

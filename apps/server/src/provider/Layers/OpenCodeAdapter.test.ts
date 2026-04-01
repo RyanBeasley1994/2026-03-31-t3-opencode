@@ -2,11 +2,12 @@ import assert from "node:assert/strict";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { ApprovalRequestId, ThreadId } from "@t3tools/contracts";
-import { Effect, Layer, Stream } from "effect";
+import { Effect, Layer, Schema, Stream } from "effect";
 import { describe, it } from "@effect/vitest";
 
 import { ServerConfig } from "../../config.ts";
 import { ServerSettingsService } from "../../serverSettings.ts";
+import { ProviderAdapterRequestError } from "../Errors.ts";
 import { OpenCodeAdapter } from "../Services/OpenCodeAdapter.ts";
 import {
   OpenCodeServerPool,
@@ -76,6 +77,13 @@ class FakeOpenCodeClient {
   private readonly subscribed = Promise.withResolvers<void>();
   private createdSessionCount = 0;
   private forkedSessionCount = 0;
+  promptAsyncImpl: ((input: unknown) => Promise<unknown>) | null = null;
+  eventSubscribeImpl:
+    | ((
+        input: unknown,
+        options?: { signal?: AbortSignal },
+      ) => Promise<{ stream: AsyncIterable<any> }>)
+    | null = null;
 
   session = {
     create: async (input: unknown) => {
@@ -102,9 +110,12 @@ class FakeOpenCodeClient {
       this.messageCalls.push(input);
       return { data: this.messageDetails.get(input.messageID) ?? { parts: [] } } as const;
     },
-    promptAsync: async (input: unknown) => {
+    promptAsync: (input: unknown) => {
       this.promptCalls.push(input);
-      return {} as const;
+      if (this.promptAsyncImpl) {
+        return this.promptAsyncImpl(input);
+      }
+      return Promise.resolve({} as const);
     },
     abort: async (input: unknown) => {
       this.abortCalls.push(input);
@@ -133,6 +144,9 @@ class FakeOpenCodeClient {
 
   event = {
     subscribe: async (_input: unknown, options?: { signal?: AbortSignal }) => {
+      if (this.eventSubscribeImpl) {
+        return this.eventSubscribeImpl(_input, options);
+      }
       options?.signal?.addEventListener("abort", () => this.eventStream.close(), { once: true });
       this.subscribed.resolve();
       return { stream: this.eventStream } as const;
@@ -339,6 +353,166 @@ describe("OpenCodeAdapterLive", () => {
     },
   );
 
+  it.effect("treats tool-calls assistant history as an unfinished resumed turn", () => {
+    const harness = new OpenCodeAdapterHarness();
+    return Effect.gen(function* () {
+      harness.client.messagesBySession.set("sess-resumed-tool-calls", [
+        { info: { role: "user", id: "user-msg-1" } },
+        {
+          info: {
+            role: "assistant",
+            id: "assistant-msg-1",
+            parentID: "user-msg-1",
+            time: { completed: new Date().toISOString() },
+            finish: "tool-calls",
+          },
+        },
+      ]);
+      const adapter = yield* OpenCodeAdapter;
+
+      yield* adapter.startSession({
+        provider: "opencode",
+        threadId: asThreadId("thread-resume-tool-calls"),
+        cwd: "/repo/tool-calls",
+        resumeCursor: { sessionId: "sess-resumed-tool-calls" },
+        runtimeMode: "full-access",
+      });
+
+      yield* Effect.promise(() => harness.client.waitForSubscription());
+      const startupEvents = yield* collectRuntimeEvents(adapter, 4);
+
+      assert.equal(startupEvents[0]?.type, "session.started");
+      assert.equal(startupEvents[1]?.type, "thread.started");
+      assert.equal(startupEvents[2]?.type, "session.state.changed");
+      assert.equal(startupEvents[3]?.type, "turn.aborted");
+      if (startupEvents[3]?.type === "turn.aborted") {
+        assert.equal(startupEvents[3].turnId, "opencode:user-msg-1");
+        assert.equal(
+          startupEvents[3].payload.reason,
+          "Recovered OpenCode session after sidecar loss; the in-flight turn cannot be resumed.",
+        );
+      }
+    }).pipe(Effect.provide(makeLayer(harness)));
+  });
+
+  it.effect("fails session start when the OpenCode event stream cannot be established", () => {
+    const harness = new OpenCodeAdapterHarness();
+    return Effect.gen(function* () {
+      harness.client.eventSubscribeImpl = async () => {
+        throw new Error("event stream unavailable");
+      };
+      const adapter = yield* OpenCodeAdapter;
+
+      const result = yield* adapter
+        .startSession({
+          provider: "opencode",
+          threadId: asThreadId("thread-subscribe-failure"),
+          cwd: "/repo/subscribe-failure",
+          runtimeMode: "full-access",
+        })
+        .pipe(
+          Effect.map((session) => ({ kind: "success" as const, session })),
+          Effect.catch((error) => Effect.succeed({ kind: "failure" as const, error })),
+        );
+
+      assert.equal(result.kind, "failure");
+      if (result.kind === "failure") {
+        assert.ok(Schema.is(ProviderAdapterRequestError)(result.error));
+        assert.equal(result.error.method, "event.subscribe");
+        assert.match(result.error.detail, /event stream unavailable/);
+      }
+
+      const hasSession = yield* adapter.hasSession(asThreadId("thread-subscribe-failure"));
+      assert.equal(hasSession, false);
+      assert.deepEqual(harness.releaseCalls, ["/repo/subscribe-failure"]);
+    }).pipe(Effect.provide(makeLayer(harness)));
+  });
+
+  it.effect("routes nested session IDs from OpenCode message events", () => {
+    const harness = new OpenCodeAdapterHarness();
+    return Effect.gen(function* () {
+      harness.client.messagesBySession.set("sess-created-1", []);
+      harness.client.messageDetails.set("assistant-nested-session", {
+        parts: [{ type: "text", text: "NESTED_SESSION_OK" }],
+      });
+      const adapter = yield* OpenCodeAdapter;
+
+      yield* adapter.startSession({
+        provider: "opencode",
+        threadId: asThreadId("thread-nested-session-id"),
+        cwd: "/repo/nested-session-id",
+        runtimeMode: "full-access",
+      });
+      yield* Effect.promise(() => harness.client.waitForSubscription());
+      yield* drainRuntimeEvents(adapter, 3);
+
+      const turn = yield* adapter.sendTurn({
+        threadId: asThreadId("thread-nested-session-id"),
+        input: "Run a command and then reply once",
+        attachments: [],
+      });
+      yield* drainRuntimeEvents(adapter, 1);
+
+      const parentMessageId = String(turn.turnId).replace("opencode:", "");
+
+      harness.client.pushEvent({
+        type: "message.part.updated",
+        properties: {
+          part: {
+            id: "part-nested-session",
+            sessionID: "sess-created-1",
+            messageID: "assistant-nested-session",
+            type: "tool",
+            callID: "call-nested-session",
+            tool: "bash",
+            state: {
+              status: "running",
+              input: { command: "sleep 1" },
+            },
+          },
+        },
+      });
+
+      const [toolStarted] = yield* collectRuntimeEvents(adapter, 1);
+      assert.equal(toolStarted?.type, "item.started");
+      if (toolStarted?.type === "item.started") {
+        assert.equal(toolStarted.turnId, turn.turnId);
+        assert.equal(toolStarted.payload.itemType, "command_execution");
+      }
+
+      harness.client.pushEvent({
+        type: "message.updated",
+        properties: {
+          info: {
+            id: "assistant-nested-session",
+            parentID: parentMessageId,
+            role: "assistant",
+            agent: "build",
+            providerID: "github-copilot",
+            modelID: "gpt-5.4",
+            sessionID: "sess-created-1",
+            cost: 0,
+            tokens: { total: 2, input: 1, output: 1, reasoning: 0, cache: { write: 0, read: 0 } },
+            time: {
+              created: new Date().toISOString(),
+              completed: new Date().toISOString(),
+            },
+            finish: "stop",
+            parts: [],
+          },
+        },
+      });
+
+      const settledEvents = yield* collectRuntimeEvents(adapter, 2);
+      assert.equal(settledEvents[0]?.type, "item.completed");
+      if (settledEvents[0]?.type === "item.completed") {
+        assert.equal(settledEvents[0].payload.itemType, "assistant_message");
+        assert.equal(settledEvents[0].payload.detail, "NESTED_SESSION_OK");
+      }
+      assert.equal(settledEvents[1]?.type, "turn.completed");
+    }).pipe(Effect.provide(makeLayer(harness)));
+  });
+
   it.effect("maps plan turns into promptAsync inputs and canonical turn.started events", () => {
     const harness = new OpenCodeAdapterHarness();
     return Effect.gen(function* () {
@@ -385,6 +559,433 @@ describe("OpenCodeAdapterLive", () => {
       assert.equal(event?.type, "turn.started");
       if (event?.type === "turn.started") {
         assert.equal(event.payload.model, "anthropic/claude-sonnet-4.5");
+      }
+    }).pipe(Effect.provide(makeLayer(harness)));
+  });
+
+  it.effect("does not wait for promptAsync to settle before reporting turn.started", () => {
+    const harness = new OpenCodeAdapterHarness();
+    return Effect.gen(function* () {
+      harness.client.messagesBySession.set("sess-created-1", []);
+      const promptAsyncStarted = yield* Effect.promise(() =>
+        Promise.resolve(Promise.withResolvers<void>()),
+      );
+      harness.client.promptAsyncImpl = async () => {
+        promptAsyncStarted.resolve();
+        return await new Promise(() => {
+          // Intentionally never resolve: this simulates a provider API that
+          // accepts the prompt but keeps the request promise pending while the
+          // turn runs over SSE.
+        });
+      };
+      const adapter = yield* OpenCodeAdapter;
+
+      yield* adapter.startSession({
+        provider: "opencode",
+        threadId: asThreadId("thread-send-pending"),
+        cwd: "/repo",
+        runtimeMode: "full-access",
+      });
+      yield* Effect.promise(() => harness.client.waitForSubscription());
+      yield* drainRuntimeEvents(adapter, 3);
+
+      const sendTurnExit = yield* Effect.promise(() =>
+        Effect.runPromiseExit(
+          adapter
+            .sendTurn({
+              threadId: asThreadId("thread-send-pending"),
+              input: "Hello pending prompt",
+              attachments: [],
+            })
+            .pipe(Effect.timeoutOption("100 millis")),
+        ),
+      );
+
+      yield* Effect.promise(() => promptAsyncStarted.promise);
+
+      assert.equal(harness.client.promptCalls.length, 1);
+      assert.equal(sendTurnExit._tag, "Success");
+      if (sendTurnExit._tag === "Success") {
+        assert.equal(sendTurnExit.value._tag, "Some");
+      }
+    }).pipe(Effect.provide(makeLayer(harness)));
+  });
+
+  it.effect("emits terminal failure events when promptAsync rejects immediately", () => {
+    const harness = new OpenCodeAdapterHarness();
+    return Effect.gen(function* () {
+      harness.client.messagesBySession.set("sess-created-1", []);
+      harness.client.promptAsyncImpl = async () => {
+        throw new Error("prompt failed immediately");
+      };
+      const adapter = yield* OpenCodeAdapter;
+
+      yield* adapter.startSession({
+        provider: "opencode",
+        threadId: asThreadId("thread-send-immediate-reject"),
+        cwd: "/repo",
+        runtimeMode: "full-access",
+      });
+      yield* Effect.promise(() => harness.client.waitForSubscription());
+      yield* drainRuntimeEvents(adapter, 3);
+
+      const result = yield* adapter
+        .sendTurn({
+          threadId: asThreadId("thread-send-immediate-reject"),
+          input: "Fail immediately",
+          attachments: [],
+        })
+        .pipe(
+          Effect.map((turn) => ({ kind: "success" as const, turn })),
+          Effect.catch((error) => Effect.succeed({ kind: "failure" as const, error })),
+        );
+
+      assert.equal(result.kind, "failure");
+      if (result.kind === "failure") {
+        assert.ok(Schema.is(ProviderAdapterRequestError)(result.error));
+        assert.equal(result.error.method, "session.promptAsync");
+        assert.match(result.error.detail, /prompt failed immediately/);
+      }
+
+      const failureEventsExit = yield* Effect.promise(() =>
+        Effect.runPromiseExit(
+          collectRuntimeEvents(adapter, 3).pipe(Effect.timeoutOption("250 millis")),
+        ),
+      );
+      assert.equal(failureEventsExit._tag, "Success");
+      if (failureEventsExit._tag === "Success") {
+        assert.equal(failureEventsExit.value._tag, "Some");
+        if (failureEventsExit.value._tag === "Some") {
+          const failureEvents = failureEventsExit.value.value;
+          assert.equal(failureEvents[0]?.type, "turn.started");
+          assert.equal(failureEvents[1]?.type, "runtime.error");
+          if (failureEvents[1]?.type === "runtime.error") {
+            assert.equal(failureEvents[1].payload.message, "prompt failed immediately");
+          }
+          assert.equal(failureEvents[2]?.type, "turn.completed");
+          if (failureEvents[2]?.type === "turn.completed") {
+            assert.equal(failureEvents[2].payload.state, "failed");
+            assert.equal(failureEvents[2].payload.errorMessage, "prompt failed immediately");
+          }
+        }
+      }
+
+      const sessions = yield* adapter.listSessions();
+      assert.equal(sessions[0]?.status, "error");
+      assert.equal(sessions[0]?.activeTurnId, undefined);
+    }).pipe(Effect.provide(makeLayer(harness)));
+  });
+
+  it.effect("does not let an idle status block later turn activity", () => {
+    const harness = new OpenCodeAdapterHarness();
+    return Effect.gen(function* () {
+      harness.client.messagesBySession.set("sess-created-1", []);
+      const adapter = yield* OpenCodeAdapter;
+
+      yield* adapter.startSession({
+        provider: "opencode",
+        threadId: asThreadId("thread-idle-after-start"),
+        cwd: "/repo",
+        runtimeMode: "full-access",
+      });
+      yield* Effect.promise(() => harness.client.waitForSubscription());
+      yield* drainRuntimeEvents(adapter, 3);
+
+      const turn = yield* adapter.sendTurn({
+        threadId: asThreadId("thread-idle-after-start"),
+        input: "Run a long task",
+        attachments: [],
+      });
+      yield* drainRuntimeEvents(adapter, 1);
+
+      harness.client.pushEvent({
+        type: "session.status",
+        properties: {
+          sessionID: "sess-created-1",
+          status: { type: "idle" },
+        },
+      });
+      harness.client.pushEvent({
+        type: "message.part.updated",
+        properties: {
+          sessionID: "sess-created-1",
+          part: {
+            id: "part-tool-1",
+            type: "tool",
+            callID: "call-1",
+            tool: "bash",
+            state: {
+              status: "running",
+              input: { command: "sleep 65" },
+            },
+          },
+        },
+      });
+
+      const firstEventExit = yield* Effect.promise(() =>
+        Effect.runPromiseExit(
+          collectRuntimeEvents(adapter, 1).pipe(Effect.timeoutOption("1000 millis")),
+        ),
+      );
+
+      assert.equal(firstEventExit._tag, "Success");
+      if (firstEventExit._tag === "Success") {
+        assert.equal(firstEventExit.value._tag, "Some");
+        if (firstEventExit.value._tag === "Some") {
+          const [event] = firstEventExit.value.value;
+          assert.equal(event?.type, "item.started");
+          if (event?.type === "item.started") {
+            assert.equal(event.turnId, turn.turnId);
+            assert.equal(event.payload.itemType, "command_execution");
+          }
+        }
+      }
+
+      const lateEventExit = yield* Effect.promise(() =>
+        Effect.runPromiseExit(
+          collectRuntimeEvents(adapter, 1).pipe(Effect.timeoutOption("2500 millis")),
+        ),
+      );
+
+      assert.equal(lateEventExit._tag, "Success");
+      if (lateEventExit._tag === "Success") {
+        assert.equal(lateEventExit.value._tag, "None");
+      }
+    }).pipe(Effect.provide(makeLayer(harness)));
+  });
+
+  it.effect(
+    "aborts the turn if the session goes idle again after mid-turn activity without completion",
+    () => {
+      const harness = new OpenCodeAdapterHarness();
+      return Effect.gen(function* () {
+        harness.client.messagesBySession.set("sess-created-1", []);
+        const adapter = yield* OpenCodeAdapter;
+
+        yield* adapter.startSession({
+          provider: "opencode",
+          threadId: asThreadId("thread-idle-after-activity"),
+          cwd: "/repo",
+          runtimeMode: "full-access",
+        });
+        yield* Effect.promise(() => harness.client.waitForSubscription());
+        yield* drainRuntimeEvents(adapter, 3);
+
+        const turn = yield* adapter.sendTurn({
+          threadId: asThreadId("thread-idle-after-activity"),
+          input: "Run a long task and then stall",
+          attachments: [],
+        });
+        yield* drainRuntimeEvents(adapter, 1);
+
+        harness.client.pushEvent({
+          type: "session.status",
+          properties: {
+            sessionID: "sess-created-1",
+            status: { type: "idle" },
+          },
+        });
+        harness.client.pushEvent({
+          type: "message.part.updated",
+          properties: {
+            sessionID: "sess-created-1",
+            part: {
+              id: "part-tool-activity",
+              type: "tool",
+              callID: "call-activity",
+              tool: "bash",
+              state: {
+                status: "running",
+                input: { command: "sleep 65" },
+              },
+            },
+          },
+        });
+
+        const [toolStarted] = yield* collectRuntimeEvents(adapter, 1);
+        assert.equal(toolStarted?.type, "item.started");
+
+        harness.client.pushEvent({
+          type: "session.status",
+          properties: {
+            sessionID: "sess-created-1",
+            status: { type: "idle" },
+          },
+        });
+
+        const abortExit = yield* Effect.promise(() =>
+          Effect.runPromiseExit(
+            collectRuntimeEvents(adapter, 1).pipe(Effect.timeoutOption("2500 millis")),
+          ),
+        );
+
+        assert.equal(abortExit._tag, "Success");
+        if (abortExit._tag === "Success") {
+          assert.equal(abortExit.value._tag, "Some");
+          if (abortExit.value._tag === "Some") {
+            const [event] = abortExit.value.value;
+            assert.equal(event?.type, "turn.aborted");
+            if (event?.type === "turn.aborted") {
+              assert.equal(event.turnId, turn.turnId);
+              assert.equal(
+                event.payload.reason,
+                "OpenCode session became idle before completing the active turn.",
+              );
+            }
+          }
+        }
+      }).pipe(Effect.provide(makeLayer(harness)));
+    },
+  );
+
+  it.effect("waits for the final assistant completion after tool-calls finish", () => {
+    const harness = new OpenCodeAdapterHarness();
+    return Effect.gen(function* () {
+      harness.client.messagesBySession.set("sess-created-1", []);
+      harness.client.messageDetails.set("assistant-final", {
+        parts: [{ type: "text", text: "PEEKABOO_TIMEOUT_FIX_FINAL" }],
+      });
+      const adapter = yield* OpenCodeAdapter;
+
+      yield* adapter.startSession({
+        provider: "opencode",
+        threadId: asThreadId("thread-tool-calls-finish"),
+        cwd: "/repo",
+        runtimeMode: "full-access",
+      });
+      yield* Effect.promise(() => harness.client.waitForSubscription());
+      yield* drainRuntimeEvents(adapter, 3);
+
+      const turn = yield* adapter.sendTurn({
+        threadId: asThreadId("thread-tool-calls-finish"),
+        input: "Run sleep 65 and then reply with a token",
+        attachments: [],
+      });
+      yield* drainRuntimeEvents(adapter, 1);
+
+      const parentMessageId = String(turn.turnId).replace("opencode:", "");
+
+      harness.client.pushEvent({
+        type: "message.updated",
+        properties: {
+          sessionID: "sess-created-1",
+          info: {
+            id: "assistant-intermediate",
+            parentID: parentMessageId,
+            role: "assistant",
+            agent: "build",
+            providerID: "github-copilot",
+            modelID: "gpt-5.4",
+            sessionID: "sess-created-1",
+            cost: 0,
+            tokens: { total: 10, input: 5, output: 5, reasoning: 0, cache: { write: 0, read: 0 } },
+            time: {
+              created: new Date().toISOString(),
+              completed: new Date().toISOString(),
+            },
+            finish: "tool-calls",
+            parts: [],
+          },
+        },
+      });
+
+      const prematureSettle = yield* Effect.promise(() =>
+        Effect.runPromiseExit(
+          collectRuntimeEvents(adapter, 1).pipe(Effect.timeoutOption("250 millis")),
+        ),
+      );
+
+      assert.equal(prematureSettle._tag, "Success");
+      if (prematureSettle._tag === "Success") {
+        assert.equal(prematureSettle.value._tag, "None");
+      }
+
+      harness.client.pushEvent({
+        type: "message.part.updated",
+        properties: {
+          sessionID: "sess-created-1",
+          part: {
+            id: "part-tool-final",
+            type: "tool",
+            callID: "call-final",
+            tool: "bash",
+            state: {
+              status: "completed",
+              input: { command: "sleep 65" },
+              output: "",
+              title: "Sleeps for 65 seconds",
+            },
+          },
+        },
+      });
+
+      harness.client.pushEvent({
+        type: "message.part.updated",
+        properties: {
+          sessionID: "sess-created-1",
+          part: {
+            id: "part-tool-final",
+            type: "tool",
+            callID: "call-final",
+            tool: "bash",
+            state: {
+              status: "completed",
+              input: { command: "sleep 65" },
+              output: "",
+              title: "Sleeps for 65 seconds",
+            },
+          },
+        },
+      });
+
+      const toolEvents = yield* collectRuntimeEvents(adapter, 2);
+      assert.equal(toolEvents[0]?.type, "item.started");
+      assert.equal(toolEvents[1]?.type, "item.completed");
+
+      harness.client.pushEvent({
+        type: "message.updated",
+        properties: {
+          sessionID: "sess-created-1",
+          info: {
+            id: "assistant-final",
+            parentID: parentMessageId,
+            role: "assistant",
+            agent: "build",
+            providerID: "github-copilot",
+            modelID: "gpt-5.4",
+            sessionID: "sess-created-1",
+            cost: 0,
+            tokens: {
+              total: 20,
+              input: 10,
+              output: 10,
+              reasoning: 0,
+              cache: { write: 0, read: 0 },
+            },
+            time: {
+              created: new Date().toISOString(),
+              completed: new Date().toISOString(),
+            },
+            finish: "stop",
+            parts: [],
+          },
+        },
+      });
+
+      const settledEvents = yield* collectRuntimeEvents(adapter, 2);
+
+      assert.equal(settledEvents[0]?.type, "item.completed");
+      if (settledEvents[0]?.type === "item.completed") {
+        assert.equal(settledEvents[0].turnId, turn.turnId);
+        assert.equal(settledEvents[0].payload.itemType, "assistant_message");
+        assert.equal(settledEvents[0].payload.detail, "PEEKABOO_TIMEOUT_FIX_FINAL");
+      }
+
+      assert.equal(settledEvents[1]?.type, "turn.completed");
+      if (settledEvents[1]?.type === "turn.completed") {
+        assert.equal(settledEvents[1].turnId, turn.turnId);
+        assert.equal(settledEvents[1].payload.state, "completed");
+        assert.equal(settledEvents[1].payload.stopReason, "stop");
       }
     }).pipe(Effect.provide(makeLayer(harness)));
   });

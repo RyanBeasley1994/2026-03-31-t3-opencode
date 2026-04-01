@@ -102,12 +102,15 @@ interface OpenCodeSessionState {
   pendingRequests: Map<string, PendingPermissionRequest | PendingQuestionRequest>;
   orderedUserMessageIds: Array<string>;
   abortErrorSuppressionUntil: number | undefined;
+  observedTurnActivity: Map<string, number>;
+  pendingIdleTurnChecks: Set<string>;
 }
 
 interface SidecarWatcher {
   readonly key: string;
   readonly abortController: AbortController;
   readonly task: Promise<void>;
+  readonly ready: Promise<void>;
 }
 
 function nowIso(): string {
@@ -143,6 +146,15 @@ function missingSession(threadId: ThreadId) {
   return new ProviderAdapterSessionNotFoundError({
     provider: PROVIDER,
     threadId,
+  });
+}
+
+function toWatcherRequestError(threadId: ThreadId, detail: string, cause?: unknown) {
+  return new ProviderAdapterRequestError({
+    provider: PROVIDER,
+    method: "event.subscribe",
+    detail,
+    ...(cause !== undefined ? { cause } : {}),
   });
 }
 
@@ -227,10 +239,13 @@ function assistantTextFromParts(parts: ReadonlyArray<OpenCodePart>): string | un
 }
 
 function isTerminalAssistantMessage(message: AssistantMessage): boolean {
+  const finish = message.finish;
+  if (finish === "tool-calls") {
+    return message.error !== undefined;
+  }
+
   return (
-    message.time.completed !== undefined ||
-    message.finish !== undefined ||
-    message.error !== undefined
+    message.time.completed !== undefined || finish !== undefined || message.error !== undefined
   );
 }
 
@@ -276,6 +291,14 @@ function setState(state: OpenCodeSessionState, updates: Partial<OpenCodeSessionS
   Object.assign(state, updates, { updatedAt: nowIso() });
 }
 
+function markObservedTurnActivity(state: OpenCodeSessionState, turnId: TurnId | undefined): void {
+  if (!turnId) {
+    return;
+  }
+  const turnKey = String(turnId);
+  state.observedTurnActivity.set(turnKey, (state.observedTurnActivity.get(turnKey) ?? 0) + 1);
+}
+
 async function loadMessages(state: OpenCodeSessionState) {
   return state.lease.client.session
     .messages({ sessionID: state.sessionId }, SDK_OPTIONS)
@@ -310,12 +333,16 @@ async function loadSessionHistorySummary(state: OpenCodeSessionState): Promise<{
     }
   }
 
-  const lastCompletedUserMessageId = [...orderedUserMessageIds]
-    .toReversed()
-    .find((messageId) => latestAssistantByParentId.get(messageId)?.time.completed !== undefined);
+  const lastCompletedUserMessageId = [...orderedUserMessageIds].toReversed().find((messageId) => {
+    const assistant = latestAssistantByParentId.get(messageId);
+    return assistant !== undefined && isTerminalAssistantMessage(assistant);
+  });
   const recoveredAbortedUserMessageId = [...orderedUserMessageIds]
     .toReversed()
-    .find((messageId) => latestAssistantByParentId.get(messageId)?.time.completed === undefined);
+    .find((messageId) => {
+      const assistant = latestAssistantByParentId.get(messageId);
+      return assistant === undefined || !isTerminalAssistantMessage(assistant);
+    });
 
   return {
     orderedUserMessageIds,
@@ -399,6 +426,7 @@ const makeOpenCodeAdapter = Effect.gen(function* () {
     assistant: AssistantMessage,
   ): Promise<void> => {
     const turnId = toTurnIdForUserMessage(assistant.parentID);
+    markObservedTurnActivity(state, turnId);
     if (state.terminalTurnIds.has(String(turnId))) {
       return;
     }
@@ -473,6 +501,57 @@ const makeOpenCodeAdapter = Effect.gen(function* () {
     await runPromise(publishRuntimeEvents(runtimeEvents));
   };
 
+  const scheduleIdleTurnCheck = (state: OpenCodeSessionState, turnId: TurnId) => {
+    const turnKey = String(turnId);
+    const observedActivityVersion = state.observedTurnActivity.get(turnKey) ?? 0;
+    const idleCheckKey = `${turnKey}:${observedActivityVersion}`;
+    if (state.pendingIdleTurnChecks.has(idleCheckKey)) {
+      return;
+    }
+
+    state.pendingIdleTurnChecks.add(idleCheckKey);
+    void (async () => {
+      try {
+        const assistant = await waitForTerminalAssistantForTurn(state, turnId);
+        if (assistant) {
+          await publishAssistantCompletion(state, assistant);
+          return;
+        }
+
+        if (
+          state.terminalTurnIds.has(turnKey) ||
+          (state.observedTurnActivity.get(turnKey) ?? 0) !== observedActivityVersion ||
+          String(state.activeTurnId) !== turnKey
+        ) {
+          return;
+        }
+
+        state.terminalTurnIds.add(turnKey);
+        setState(state, { activeTurnId: undefined, status: "ready" });
+        await runPromise(
+          publishRuntimeEvents([
+            {
+              ...runtimeEventBase({
+                threadId: state.threadId,
+                createdAt: nowIso(),
+                turnId,
+              }),
+              type: "turn.aborted",
+              payload: {
+                reason: "OpenCode session became idle before completing the active turn.",
+              },
+            },
+          ]),
+        );
+      } catch {
+        // The watcher must keep processing later SSE events even if idle
+        // reconciliation fails.
+      } finally {
+        state.pendingIdleTurnChecks.delete(idleCheckKey);
+      }
+    })();
+  };
+
   const activeSessionsForKey = (key: string) =>
     Array.from(sessions.values()).filter((session) => session.lease.key === key);
 
@@ -496,43 +575,59 @@ const makeOpenCodeAdapter = Effect.gen(function* () {
   };
 
   const ensureWatcher = (state: OpenCodeSessionState) =>
-    Effect.sync(() => {
-      if (watchers.has(state.lease.key)) {
-        return;
-      }
-
-      const abortController = new AbortController();
-      const task = (async () => {
-        try {
-          const subscription = await state.lease.client.event.subscribe(undefined, {
-            ...SDK_OPTIONS,
-            signal: abortController.signal,
-          });
-
-          for await (const event of subscription.stream) {
-            if (abortController.signal.aborted) {
-              break;
-            }
-
-            const sessionState = resolveSessionForEvent(event, getStateBySessionId);
-            if (!sessionState) {
-              continue;
-            }
-
-            await handleEvent(sessionState, event);
-          }
-        } catch {
-          // The SDK SSE client retries internally; ignored here.
-        } finally {
-          watchers.delete(state.lease.key);
+    Effect.tryPromise({
+      try: async () => {
+        const existing = watchers.get(state.lease.key);
+        if (existing) {
+          await existing.ready;
+          return;
         }
-      })();
 
-      watchers.set(state.lease.key, {
-        key: state.lease.key,
-        abortController,
-        task,
-      });
+        const abortController = new AbortController();
+        const ready = Promise.withResolvers<void>();
+        const task = (async () => {
+          try {
+            const subscription = await state.lease.client.event.subscribe(undefined, {
+              ...SDK_OPTIONS,
+              signal: abortController.signal,
+            });
+            ready.resolve();
+
+            for await (const event of subscription.stream) {
+              if (abortController.signal.aborted) {
+                break;
+              }
+
+              const sessionState = resolveSessionForEvent(event, getStateBySessionId);
+              if (!sessionState) {
+                continue;
+              }
+
+              await handleEvent(sessionState, event);
+            }
+          } catch (error) {
+            ready.reject(error);
+            // The SDK SSE client retries internally; ignored here.
+          } finally {
+            watchers.delete(state.lease.key);
+          }
+        })();
+
+        watchers.set(state.lease.key, {
+          key: state.lease.key,
+          abortController,
+          task,
+          ready: ready.promise,
+        });
+
+        await ready.promise;
+      },
+      catch: (cause) =>
+        toWatcherRequestError(
+          state.threadId,
+          cause instanceof Error ? cause.message : "Failed to establish the OpenCode event stream.",
+          cause,
+        ),
     });
 
   const handleEvent = async (sessionState: OpenCodeSessionState, event: Event) => {
@@ -541,6 +636,7 @@ const makeOpenCodeAdapter = Effect.gen(function* () {
         if (event.properties.status.type === "retry") {
           const createdAt = nowIso();
           setState(sessionState, { status: "running" });
+          markObservedTurnActivity(sessionState, sessionState.activeTurnId);
           await runPromise(
             publishRuntimeEvents([
               {
@@ -562,6 +658,7 @@ const makeOpenCodeAdapter = Effect.gen(function* () {
 
         if (event.properties.status.type === "busy") {
           setState(sessionState, { status: "running" });
+          markObservedTurnActivity(sessionState, sessionState.activeTurnId);
           break;
         }
 
@@ -569,29 +666,7 @@ const makeOpenCodeAdapter = Effect.gen(function* () {
           sessionState.activeTurnId &&
           !sessionState.terminalTurnIds.has(String(sessionState.activeTurnId))
         ) {
-          const turnId = sessionState.activeTurnId;
-          const assistant = await waitForTerminalAssistantForTurn(sessionState, turnId);
-          if (assistant) {
-            await publishAssistantCompletion(sessionState, assistant);
-            break;
-          }
-          sessionState.terminalTurnIds.add(String(turnId));
-          setState(sessionState, { activeTurnId: undefined, status: "ready" });
-          await runPromise(
-            publishRuntimeEvents([
-              {
-                ...runtimeEventBase({
-                  threadId: sessionState.threadId,
-                  createdAt: nowIso(),
-                  turnId,
-                }),
-                type: "turn.aborted",
-                payload: {
-                  reason: "OpenCode session became idle before completing the active turn.",
-                },
-              },
-            ]),
-          );
+          scheduleIdleTurnCheck(sessionState, sessionState.activeTurnId);
         } else {
           setState(sessionState, { status: "ready" });
         }
@@ -608,6 +683,7 @@ const makeOpenCodeAdapter = Effect.gen(function* () {
 
         const itemId = toToolItemId(part.callID);
         const turnId = sessionState.activeTurnId ?? sessionState.lastCompletedTurnId;
+        markObservedTurnActivity(sessionState, turnId);
         const previousStatus = sessionState.knownToolStatuses.get(part.id);
         const itemType = toCanonicalToolItemType(part.tool);
         const detail = summarizeToolDetail(part);
@@ -699,6 +775,7 @@ const makeOpenCodeAdapter = Effect.gen(function* () {
         if (!turnId) {
           break;
         }
+        markObservedTurnActivity(sessionState, turnId);
 
         await runPromise(
           publishRuntimeEvents([
@@ -725,11 +802,7 @@ const makeOpenCodeAdapter = Effect.gen(function* () {
         }
 
         const assistant = event.properties.info;
-        const terminal =
-          assistant.time.completed !== undefined ||
-          assistant.finish !== undefined ||
-          assistant.error;
-        if (!terminal) {
+        if (!isTerminalAssistantMessage(assistant)) {
           break;
         }
         await publishAssistantCompletion(sessionState, assistant);
@@ -745,6 +818,7 @@ const makeOpenCodeAdapter = Effect.gen(function* () {
           ...(toolName ? { toolName } : {}),
         });
         const turnId = sessionState.activeTurnId;
+        markObservedTurnActivity(sessionState, turnId);
         const itemId = event.properties.tool
           ? toToolItemId(event.properties.tool.callID)
           : undefined;
@@ -808,6 +882,7 @@ const makeOpenCodeAdapter = Effect.gen(function* () {
 
       case "question.asked": {
         const turnId = sessionState.activeTurnId;
+        markObservedTurnActivity(sessionState, turnId);
         const itemId = event.properties.tool
           ? toToolItemId(event.properties.tool.callID)
           : undefined;
@@ -906,6 +981,7 @@ const makeOpenCodeAdapter = Effect.gen(function* () {
         if (!turnId) {
           break;
         }
+        markObservedTurnActivity(sessionState, turnId);
         await runPromise(
           publishRuntimeEvents([
             {
@@ -932,6 +1008,7 @@ const makeOpenCodeAdapter = Effect.gen(function* () {
         if (!turnId || event.properties.diff.length === 0) {
           break;
         }
+        markObservedTurnActivity(sessionState, turnId);
         await runPromise(
           publishRuntimeEvents([
             {
@@ -1168,6 +1245,8 @@ const makeOpenCodeAdapter = Effect.gen(function* () {
         pendingRequests: new Map(),
         orderedUserMessageIds: [],
         abortErrorSuppressionUntil: undefined,
+        observedTurnActivity: new Map(),
+        pendingIdleTurnChecks: new Set(),
       };
 
       const history = yield* Effect.tryPromise({
@@ -1184,7 +1263,18 @@ const makeOpenCodeAdapter = Effect.gen(function* () {
 
       sessions.set(input.threadId, state);
       threadIdBySessionId.set(state.sessionId, input.threadId);
-      yield* ensureWatcher(state);
+      yield* ensureWatcher(state).pipe(
+        Effect.catch((error) =>
+          state.lease.release.pipe(
+            Effect.flatMap(() => {
+              sessions.delete(input.threadId);
+              threadIdBySessionId.delete(state.sessionId);
+              return stopWatcherIfUnused(state.lease.key);
+            }),
+            Effect.flatMap(() => Effect.fail(error)),
+          ),
+        ),
+      );
 
       const runtimeEvents: Array<ProviderRuntimeEvent> = [
         {
@@ -1314,26 +1404,6 @@ const makeOpenCodeAdapter = Effect.gen(function* () {
         input.modelSelection?.provider === PROVIDER ? input.modelSelection.model : undefined;
       const agent = input.interactionMode === "plan" ? "plan" : "build";
 
-      yield* Effect.tryPromise({
-        try: () =>
-          state.lease.client.session.promptAsync(
-            {
-              sessionID: state.sessionId,
-              messageID: openCodeMessageId,
-              ...(selectedModel ? { model: selectedModel } : {}),
-              agent,
-              parts,
-            },
-            SDK_OPTIONS,
-          ),
-        catch: (cause) =>
-          toRequestError(
-            "session.promptAsync",
-            cause instanceof Error ? cause.message : "Failed to start OpenCode turn.",
-            cause,
-          ),
-      });
-
       state.orderedUserMessageIds.push(openCodeMessageId);
       setState(state, {
         activeTurnId: turnId,
@@ -1342,6 +1412,7 @@ const makeOpenCodeAdapter = Effect.gen(function* () {
         model: selectedModelSlug ?? state.model,
         lastError: undefined,
       });
+      state.observedTurnActivity.delete(String(turnId));
 
       yield* publishRuntimeEvents([
         {
@@ -1354,6 +1425,131 @@ const makeOpenCodeAdapter = Effect.gen(function* () {
           payload: selectedModelSlug ? { model: selectedModelSlug } : {},
         },
       ]);
+
+      const promptRequest = state.lease.client.session.promptAsync(
+        {
+          sessionID: state.sessionId,
+          messageID: openCodeMessageId,
+          ...(selectedModel ? { model: selectedModel } : {}),
+          agent,
+          parts,
+        },
+        SDK_OPTIONS,
+      );
+
+      const startupRejected = yield* Effect.promise(() =>
+        Promise.race([
+          promptRequest.then(
+            () => false,
+            () => true,
+          ),
+          Promise.resolve().then(() => false),
+        ]),
+      );
+
+      if (startupRejected) {
+        const failure = yield* Effect.promise(() =>
+          promptRequest.then(
+            () =>
+              toRequestError(
+                "session.promptAsync",
+                "OpenCode prompt unexpectedly resolved after the startup rejection probe.",
+              ),
+            (cause) =>
+              toRequestError(
+                "session.promptAsync",
+                cause instanceof Error ? cause.message : "Failed to start OpenCode turn.",
+                cause,
+              ),
+          ),
+        );
+
+        state.terminalTurnIds.add(String(turnId));
+        setState(state, {
+          activeTurnId: undefined,
+          status: "error",
+          lastError: failure.detail,
+        });
+
+        yield* publishRuntimeEvents([
+          {
+            ...runtimeEventBase({
+              threadId: state.threadId,
+              createdAt: nowIso(),
+              turnId,
+            }),
+            type: "runtime.error",
+            payload: {
+              message: failure.detail,
+              class: "provider_error",
+              detail: failure.cause ?? failure,
+            },
+          },
+          {
+            ...runtimeEventBase({
+              threadId: state.threadId,
+              createdAt: nowIso(),
+              turnId,
+            }),
+            type: "turn.completed",
+            payload: {
+              state: "failed",
+              errorMessage: failure.detail,
+            },
+          },
+        ]);
+        return yield* failure;
+      }
+
+      void promptRequest.catch((cause) => {
+        if (
+          state.terminalTurnIds.has(String(turnId)) ||
+          (state.observedTurnActivity.get(String(turnId)) ?? 0) > 0
+        ) {
+          return;
+        }
+
+        state.terminalTurnIds.add(String(turnId));
+        setState(state, {
+          activeTurnId:
+            state.activeTurnId && String(state.activeTurnId) === String(turnId)
+              ? undefined
+              : state.activeTurnId,
+          status: "error",
+          lastError: cause instanceof Error ? cause.message : "Failed to start OpenCode turn.",
+        });
+
+        const message = cause instanceof Error ? cause.message : "Failed to start OpenCode turn.";
+        void runPromise(
+          publishRuntimeEvents([
+            {
+              ...runtimeEventBase({
+                threadId: state.threadId,
+                createdAt: nowIso(),
+                turnId,
+              }),
+              type: "runtime.error",
+              payload: {
+                message,
+                class: "provider_error",
+                detail: cause,
+              },
+            },
+            {
+              ...runtimeEventBase({
+                threadId: state.threadId,
+                createdAt: nowIso(),
+                turnId,
+              }),
+              type: "turn.completed",
+              payload: {
+                state: "failed",
+                errorMessage: message,
+              },
+            },
+          ]),
+        );
+      });
 
       return {
         threadId: input.threadId,
@@ -1672,7 +1868,17 @@ function resolveSessionForEvent(
   if (!maybeProperties || typeof maybeProperties !== "object") {
     return undefined;
   }
-  const sessionId = "sessionID" in maybeProperties ? maybeProperties.sessionID : undefined;
+
+  const nestedInfo = "info" in maybeProperties ? maybeProperties.info : undefined;
+  const nestedPart = "part" in maybeProperties ? maybeProperties.part : undefined;
+  const sessionId =
+    ("sessionID" in maybeProperties ? maybeProperties.sessionID : undefined) ??
+    (nestedInfo && typeof nestedInfo === "object" && "sessionID" in nestedInfo
+      ? nestedInfo.sessionID
+      : undefined) ??
+    (nestedPart && typeof nestedPart === "object" && "sessionID" in nestedPart
+      ? nestedPart.sessionID
+      : undefined);
   return typeof sessionId === "string" ? getStateBySessionId(sessionId) : undefined;
 }
 

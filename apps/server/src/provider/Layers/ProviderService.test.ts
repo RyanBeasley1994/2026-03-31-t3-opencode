@@ -969,6 +969,96 @@ routing.layer("ProviderServiceLive routing", (it) => {
       fs.rmSync(tempDir, { recursive: true, force: true });
     }).pipe(Effect.provide(NodeServices.layer)),
   );
+
+  it.effect(
+    "allows callers to force a fresh provider session without reusing persisted resume state",
+    () =>
+      Effect.gen(function* () {
+        const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "t3-provider-service-fresh-start-"));
+        const dbPath = path.join(tempDir, "orchestration.sqlite");
+        const persistenceLayer = makeSqlitePersistenceLive(dbPath);
+        const runtimeRepositoryLayer = ProviderSessionRuntimeRepositoryLive.pipe(
+          Layer.provide(persistenceLayer),
+        );
+
+        const firstOpenCode = makeFakeCodexAdapter("opencode");
+        const firstRegistry: typeof ProviderAdapterRegistry.Service = {
+          getByProvider: (provider) =>
+            provider === "opencode"
+              ? Effect.succeed(firstOpenCode.adapter)
+              : Effect.fail(new ProviderUnsupportedError({ provider })),
+          listProviders: () => Effect.succeed(["opencode"]),
+        };
+        const firstDirectoryLayer = ProviderSessionDirectoryLive.pipe(
+          Layer.provide(runtimeRepositoryLayer),
+        );
+        const firstProviderLayer = makeProviderServiceLive().pipe(
+          Layer.provide(Layer.succeed(ProviderAdapterRegistry, firstRegistry)),
+          Layer.provide(firstDirectoryLayer),
+          Layer.provide(defaultServerSettingsLayer),
+          Layer.provide(AnalyticsService.layerTest),
+        );
+
+        const initial = yield* Effect.gen(function* () {
+          const provider = yield* ProviderService;
+          return yield* provider.startSession(asThreadId("thread-opencode-fresh-start"), {
+            provider: "opencode",
+            threadId: asThreadId("thread-opencode-fresh-start"),
+            cwd: "/tmp/project-opencode-fresh-start",
+            runtimeMode: "full-access",
+          });
+        }).pipe(Effect.provide(firstProviderLayer));
+
+        const secondOpenCode = makeFakeCodexAdapter("opencode");
+        const secondRegistry: typeof ProviderAdapterRegistry.Service = {
+          getByProvider: (provider) =>
+            provider === "opencode"
+              ? Effect.succeed(secondOpenCode.adapter)
+              : Effect.fail(new ProviderUnsupportedError({ provider })),
+          listProviders: () => Effect.succeed(["opencode"]),
+        };
+        const secondDirectoryLayer = ProviderSessionDirectoryLive.pipe(
+          Layer.provide(runtimeRepositoryLayer),
+        );
+        const secondProviderLayer = makeProviderServiceLive().pipe(
+          Layer.provide(Layer.succeed(ProviderAdapterRegistry, secondRegistry)),
+          Layer.provide(secondDirectoryLayer),
+          Layer.provide(defaultServerSettingsLayer),
+          Layer.provide(AnalyticsService.layerTest),
+        );
+
+        secondOpenCode.startSession.mockClear();
+
+        yield* Effect.gen(function* () {
+          const provider = yield* ProviderService;
+          yield* provider.startSession(initial.threadId, {
+            provider: "opencode",
+            threadId: initial.threadId,
+            cwd: "/tmp/project-opencode-fresh-start",
+            resumeCursor: null,
+            runtimeMode: "full-access",
+          });
+        }).pipe(Effect.provide(secondProviderLayer));
+
+        assert.equal(secondOpenCode.startSession.mock.calls.length, 1);
+        const freshStartInput = secondOpenCode.startSession.mock.calls[0]?.[0];
+        assert.equal(typeof freshStartInput === "object" && freshStartInput !== null, true);
+        if (freshStartInput && typeof freshStartInput === "object") {
+          const startPayload = freshStartInput as {
+            provider?: string;
+            cwd?: string;
+            resumeCursor?: unknown;
+            threadId?: string;
+          };
+          assert.equal(startPayload.provider, "opencode");
+          assert.equal(startPayload.cwd, "/tmp/project-opencode-fresh-start");
+          assert.equal(startPayload.resumeCursor, undefined);
+          assert.equal(startPayload.threadId, initial.threadId);
+        }
+
+        fs.rmSync(tempDir, { recursive: true, force: true });
+      }).pipe(Effect.provide(NodeServices.layer)),
+  );
 });
 
 const fanout = makeProviderServiceLayer();
