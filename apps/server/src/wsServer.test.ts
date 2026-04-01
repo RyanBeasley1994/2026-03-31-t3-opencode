@@ -1,4 +1,5 @@
 import * as Http from "node:http";
+import { createHmac } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -453,6 +454,44 @@ async function requestPath(
   });
 }
 
+async function requestPost(
+  port: number,
+  requestPath: string,
+  body: string,
+  headers: Record<string, string> = {},
+): Promise<{ statusCode: number; body: string }> {
+  return new Promise((resolve, reject) => {
+    const req = Http.request(
+      {
+        hostname: "127.0.0.1",
+        port,
+        path: requestPath,
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "content-length": Buffer.byteLength(body),
+          ...headers,
+        },
+      },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on("data", (chunk) => {
+          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+        });
+        res.on("end", () => {
+          resolve({
+            statusCode: res.statusCode ?? 0,
+            body: Buffer.concat(chunks).toString("utf8"),
+          });
+        });
+      },
+    );
+    req.once("error", reject);
+    req.write(body);
+    req.end();
+  });
+}
+
 function compileKeybindings(bindings: KeybindingsConfig): ResolvedKeybindingsConfig {
   const resolved: Array<ResolvedKeybindingsConfig[number]> = [];
   for (const binding of bindings) {
@@ -702,6 +741,95 @@ describe("WebSocket Server", () => {
     const response = await requestPath(port, "/..%2f..%2fetc/passwd");
     expect(response.statusCode).toBe(400);
     expect(response.body).toBe("Invalid static file path");
+  });
+
+  it("supports github app secrets status and updates over websocket", async () => {
+    server = await createTestServer({ cwd: "/test/project" });
+    const addr = server.address();
+    const port = typeof addr === "object" && addr !== null ? addr.port : 0;
+    expect(port).toBeGreaterThan(0);
+
+    const [ws] = await connectAndAwaitWelcome(port);
+    connections.push(ws);
+
+    const initial = await sendRequest(ws, WS_METHODS.serverGetGithubAppSecretsStatus);
+    expect(initial.error).toBeUndefined();
+    expect(initial.result).toEqual({
+      hasPrivateKey: false,
+      hasWebhookSecret: false,
+    });
+
+    const updated = await sendRequest(ws, WS_METHODS.serverUpdateGithubAppSecrets, {
+      patch: {
+        privateKeyPem: "-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----",
+        webhookSecret: "top-secret",
+      },
+    });
+    expect(updated.error).toBeUndefined();
+    expect(updated.result).toEqual({
+      hasPrivateKey: true,
+      hasWebhookSecret: true,
+    });
+
+    const cleared = await sendRequest(ws, WS_METHODS.serverUpdateGithubAppSecrets, {
+      patch: {
+        privateKeyPem: null,
+        webhookSecret: null,
+      },
+    });
+    expect(cleared.error).toBeUndefined();
+    expect(cleared.result).toEqual({
+      hasPrivateKey: false,
+      hasWebhookSecret: false,
+    });
+  });
+
+  it("verifies github webhook signature and deduplicates delivery ids", async () => {
+    server = await createTestServer({
+      cwd: "/test/project",
+      serverSettings: {
+        githubApp: {
+          enabled: true,
+          appId: "12345",
+          botLogin: "t3-bot",
+        },
+      },
+    });
+    const addr = server.address();
+    const port = typeof addr === "object" && addr !== null ? addr.port : 0;
+    expect(port).toBeGreaterThan(0);
+
+    const [ws] = await connectAndAwaitWelcome(port);
+    connections.push(ws);
+    await sendRequest(ws, WS_METHODS.serverUpdateGithubAppSecrets, {
+      patch: {
+        webhookSecret: "test-webhook-secret",
+      },
+    });
+
+    const payload = JSON.stringify({ hello: "world" });
+    const missingSigResponse = await requestPost(port, "/api/github/webhook", payload, {
+      "x-github-delivery": "delivery-a",
+      "x-github-event": "ping",
+    });
+    expect(missingSigResponse.statusCode).toBe(401);
+
+    const signature = `sha256=${createHmac("sha256", "test-webhook-secret").update(payload).digest("hex")}`;
+    const firstResponse = await requestPost(port, "/api/github/webhook", payload, {
+      "x-github-delivery": "delivery-b",
+      "x-github-event": "ping",
+      "x-hub-signature-256": signature,
+    });
+    expect(firstResponse.statusCode).toBe(200);
+    expect(firstResponse.body).toContain("ignored");
+
+    const duplicateResponse = await requestPost(port, "/api/github/webhook", payload, {
+      "x-github-delivery": "delivery-b",
+      "x-github-event": "ping",
+      "x-hub-signature-256": signature,
+    });
+    expect(duplicateResponse.statusCode).toBe(200);
+    expect(duplicateResponse.body).toContain("duplicate");
   });
 
   it("bootstraps the cwd project on startup when enabled", async () => {

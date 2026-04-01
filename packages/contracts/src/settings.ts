@@ -79,6 +79,25 @@ export const OpenCodeSettings = Schema.Struct({
 });
 export type OpenCodeSettings = typeof OpenCodeSettings.Type;
 
+export const GithubAppSettings = Schema.Struct({
+  enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(() => false)),
+  appId: TrimmedString.pipe(Schema.withDecodingDefault(() => "")),
+  botLogin: TrimmedString.pipe(Schema.withDecodingDefault(() => "")),
+});
+export type GithubAppSettings = typeof GithubAppSettings.Type;
+
+export const GithubAppSecretsStatus = Schema.Struct({
+  hasPrivateKey: Schema.Boolean,
+  hasWebhookSecret: Schema.Boolean,
+});
+export type GithubAppSecretsStatus = typeof GithubAppSecretsStatus.Type;
+
+export const GithubAppSecretsUpdate = Schema.Struct({
+  privateKeyPem: Schema.optionalKey(Schema.NullOr(Schema.String)),
+  webhookSecret: Schema.optionalKey(Schema.NullOr(TrimmedString)),
+});
+export type GithubAppSecretsUpdate = typeof GithubAppSecretsUpdate.Type;
+
 export const ServerSettings = Schema.Struct({
   enableAssistantStreaming: Schema.Boolean.pipe(Schema.withDecodingDefault(() => false)),
   defaultThreadEnvMode: ThreadEnvMode.pipe(
@@ -97,6 +116,7 @@ export const ServerSettings = Schema.Struct({
     claudeAgent: ClaudeSettings.pipe(Schema.withDecodingDefault(() => ({}))),
     opencode: OpenCodeSettings.pipe(Schema.withDecodingDefault(() => ({}))),
   }).pipe(Schema.withDecodingDefault(() => ({}))),
+  githubApp: GithubAppSettings.pipe(Schema.withDecodingDefault(() => ({}))),
 });
 export type ServerSettings = typeof ServerSettings.Type;
 
@@ -161,6 +181,12 @@ const OpenCodeSettingsPatch = Schema.Struct({
   customModels: Schema.optionalKey(Schema.Array(Schema.String)),
 });
 
+const GithubAppSettingsPatch = Schema.Struct({
+  enabled: Schema.optionalKey(Schema.Boolean),
+  appId: Schema.optionalKey(Schema.String),
+  botLogin: Schema.optionalKey(Schema.String),
+});
+
 export const ServerSettingsPatch = Schema.Struct({
   enableAssistantStreaming: Schema.optionalKey(Schema.Boolean),
   defaultThreadEnvMode: Schema.optionalKey(ThreadEnvMode),
@@ -172,5 +198,6 @@ export const ServerSettingsPatch = Schema.Struct({
       opencode: Schema.optionalKey(OpenCodeSettingsPatch),
     }),
   ),
+  githubApp: Schema.optionalKey(GithubAppSettingsPatch),
 });
 export type ServerSettingsPatch = typeof ServerSettingsPatch.Type;

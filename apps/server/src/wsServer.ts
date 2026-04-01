@@ -79,6 +79,7 @@ import { expandHomePath } from "./os-jank.ts";
 import { makeServerPushBus } from "./wsServer/pushBus.ts";
 import { makeServerReadiness } from "./wsServer/readiness.ts";
 import { decodeJsonResult, formatSchemaError } from "@t3tools/shared/schemaJson";
+import { GithubAppAutomation } from "./github/Services/GithubAppAutomation.ts";
 
 /**
  * ServerShape - Service API for server lifecycle control.
@@ -196,6 +197,31 @@ function resolveWorkspaceWritePath(params: {
   });
 }
 
+function readHttpRequestBody(
+  req: http.IncomingMessage,
+): Effect.Effect<Uint8Array, RouteRequestError> {
+  return Effect.tryPromise({
+    try: () =>
+      new Promise<Uint8Array>((resolve, reject) => {
+        const chunks: Buffer[] = [];
+        req.on("data", (chunk: Buffer | string) => {
+          if (typeof chunk === "string") {
+            chunks.push(Buffer.from(chunk));
+          } else {
+            chunks.push(chunk);
+          }
+        });
+        req.on("end", () => resolve(new Uint8Array(Buffer.concat(chunks))));
+        req.on("error", reject);
+        req.on("aborted", () => reject(new Error("aborted")));
+      }),
+    catch: () =>
+      new RouteRequestError({
+        message: "Failed to read webhook request body.",
+      }),
+  });
+}
+
 function stripRequestTag<T extends { _tag: string }>(body: T) {
   return Struct.omit(body, ["_tag"]);
 }
@@ -219,7 +245,8 @@ export type ServerRuntimeServices =
   | Keybindings
   | ServerSettingsService
   | Open
-  | AnalyticsService;
+  | AnalyticsService
+  | GithubAppAutomation;
 
 export class ServerLifecycleError extends Schema.TaggedErrorClass<ServerLifecycleError>()(
   "ServerLifecycleError",
@@ -261,6 +288,7 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
   const terminalManager = yield* TerminalManager;
   const keybindingsManager = yield* Keybindings;
   const serverSettingsManager = yield* ServerSettingsService;
+  const githubAppAutomation = yield* GithubAppAutomation;
   const providerRegistry = yield* ProviderRegistry;
   const git = yield* GitCore;
   const fileSystem = yield* FileSystem.FileSystem;
@@ -306,6 +334,11 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
   yield* serverSettingsManager.start.pipe(
     Effect.mapError(
       (cause) => new ServerLifecycleError({ operation: "serverSettingsRuntimeStart", cause }),
+    ),
+  );
+  yield* githubAppAutomation.start.pipe(
+    Effect.mapError(
+      (cause) => new ServerLifecycleError({ operation: "githubAppAutomationStart", cause }),
     ),
   );
 
@@ -438,6 +471,20 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
       Effect.gen(function* () {
         const url = new URL(req.url ?? "/", `http://localhost:${port}`);
         if (tryHandleProjectFaviconRequest(url, res)) {
+          return;
+        }
+
+        if (url.pathname === "/api/github/webhook") {
+          if (req.method !== "POST") {
+            respond(405, { "Content-Type": "text/plain" }, "Method Not Allowed");
+            return;
+          }
+          const rawBody = yield* readHttpRequestBody(req);
+          const response = yield* githubAppAutomation.handleWebhook({
+            headers: req.headers,
+            rawBody,
+          });
+          respond(response.statusCode, { "Content-Type": "text/plain" }, response.body);
           return;
         }
 
@@ -935,6 +982,15 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
       case WS_METHODS.serverUpdateSettings: {
         const body = stripRequestTag(request.body);
         return yield* serverSettingsManager.updateSettings(body.patch);
+      }
+
+      case WS_METHODS.serverGetGithubAppSecretsStatus: {
+        return yield* githubAppAutomation.getSecretsStatus;
+      }
+
+      case WS_METHODS.serverUpdateGithubAppSecrets: {
+        const body = stripRequestTag(request.body);
+        return yield* githubAppAutomation.updateSecrets(body.patch);
       }
 
       default: {

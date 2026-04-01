@@ -8,6 +8,9 @@ import { ServerConfig } from "./config";
 import { OrchestrationCommandReceiptRepositoryLive } from "./persistence/Layers/OrchestrationCommandReceipts";
 import { OrchestrationEventStoreLive } from "./persistence/Layers/OrchestrationEventStore";
 import { ProviderSessionRuntimeRepositoryLive } from "./persistence/Layers/ProviderSessionRuntime";
+import { GithubTaskLinkRepositoryLive } from "./persistence/Layers/GithubTaskLinks.ts";
+import { GithubWebhookDeliveryRepositoryLive } from "./persistence/Layers/GithubWebhookDeliveries.ts";
+import { GithubWorktreeCleanupJobRepositoryLive } from "./persistence/Layers/GithubWorktreeCleanupJobs.ts";
 import { OrchestrationEngineLive } from "./orchestration/Layers/OrchestrationEngine";
 import { CheckpointReactorLive } from "./orchestration/Layers/CheckpointReactor";
 import { OrchestrationReactorLive } from "./orchestration/Layers/OrchestrationReactor";
@@ -37,6 +40,7 @@ import { GitHubCliLive } from "./git/Layers/GitHubCli";
 import { RoutingTextGenerationLive } from "./git/Layers/RoutingTextGeneration";
 import { PtyAdapter } from "./terminal/Services/PTY";
 import { AnalyticsService } from "./telemetry/Services/AnalyticsService";
+import { GithubAppAutomationLive } from "./github/Layers/GithubAppAutomation.ts";
 
 type RuntimePtyAdapterLoader = {
   layer: Layer.Layer<PtyAdapter, never, FileSystem.FileSystem | Path.Path>;
@@ -147,11 +151,20 @@ export function makeServerRuntimeServicesLayer() {
     Layer.provideMerge(textGenerationLayer),
   );
 
-  return Layer.mergeAll(
+  const baseRuntimeLayer = Layer.mergeAll(
     orchestrationReactorLayer,
     GitCoreLive,
     gitManagerLayer,
     terminalLayer,
     KeybindingsLive,
-  ).pipe(Layer.provideMerge(NodeServices.layer));
+    GithubWebhookDeliveryRepositoryLive,
+    GithubTaskLinkRepositoryLive,
+    GithubWorktreeCleanupJobRepositoryLive,
+  );
+
+  const githubAutomationLayer = GithubAppAutomationLive.pipe(Layer.provide(baseRuntimeLayer));
+
+  return Layer.mergeAll(baseRuntimeLayer, githubAutomationLayer).pipe(
+    Layer.provideMerge(NodeServices.layer),
+  );
 }

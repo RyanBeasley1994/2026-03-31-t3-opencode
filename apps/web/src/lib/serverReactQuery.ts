@@ -4,6 +4,7 @@ import { ensureNativeApi } from "~/nativeApi";
 export const serverQueryKeys = {
   all: ["server"] as const,
   config: () => ["server", "config"] as const,
+  githubAppSecretsStatus: () => ["server", "github-app-secrets-status"] as const,
 };
 
 /**
@@ -19,6 +20,16 @@ export function serverConfigQueryOptions() {
     queryFn: async () => {
       const api = ensureNativeApi();
       return api.server.getConfig();
+    },
+  });
+}
+
+export function githubAppSecretsStatusQueryOptions() {
+  return queryOptions({
+    queryKey: serverQueryKeys.githubAppSecretsStatus(),
+    queryFn: async () => {
+      const api = ensureNativeApi();
+      return api.server.getGithubAppSecretsStatus();
     },
   });
 }

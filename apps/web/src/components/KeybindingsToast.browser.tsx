@@ -65,6 +65,11 @@ function createBaseServerConfig(): ServerConfig {
         claudeAgent: { enabled: true, binaryPath: "", customModels: [] },
         opencode: { enabled: true, binaryPath: "", customModels: [] },
       },
+      githubApp: {
+        enabled: false,
+        appId: "",
+        botLogin: "",
+      },
     },
   };
 }

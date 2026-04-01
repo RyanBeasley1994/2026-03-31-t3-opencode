@@ -41,7 +41,11 @@ import {
   setDesktopUpdateStateQueryData,
   useDesktopUpdateState,
 } from "../../lib/desktopUpdateReactQuery";
-import { serverConfigQueryOptions, serverQueryKeys } from "../../lib/serverReactQuery";
+import {
+  githubAppSecretsStatusQueryOptions,
+  serverConfigQueryOptions,
+  serverQueryKeys,
+} from "../../lib/serverReactQuery";
 import {
   MAX_CUSTOM_MODEL_LENGTH,
   MODEL_PROVIDER_SETTINGS,
@@ -487,6 +491,9 @@ export function useSettingsRestore(onRestored?: () => void) {
         : []),
       ...(isGitWritingModelDirty ? ["Git writing model"] : []),
       ...(areProviderSettingsDirty ? ["Providers"] : []),
+      ...(!Equal.equals(settings.githubApp, DEFAULT_UNIFIED_SETTINGS.githubApp)
+        ? ["GitHub App"]
+        : []),
     ],
     [
       areProviderSettingsDirty,
@@ -496,6 +503,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       settings.defaultThreadEnvMode,
       settings.diffWordWrap,
       settings.enableAssistantStreaming,
+      settings.githubApp,
       settings.timestampFormat,
       theme,
     ],
@@ -527,8 +535,12 @@ export function GeneralSettingsPanel() {
   const settings = useSettings();
   const { updateSettings } = useUpdateSettings();
   const serverConfigQuery = useQuery(serverConfigQueryOptions());
+  const githubAppSecretsQuery = useQuery(githubAppSecretsStatusQueryOptions());
   const [isOpeningKeybindings, setIsOpeningKeybindings] = useState(false);
   const [openKeybindingsError, setOpenKeybindingsError] = useState<string | null>(null);
+  const [githubPrivateKeyInput, setGithubPrivateKeyInput] = useState("");
+  const [githubWebhookSecretInput, setGithubWebhookSecretInput] = useState("");
+  const [isUpdatingGithubSecrets, setIsUpdatingGithubSecrets] = useState(false);
   const [openProviderDetails, setOpenProviderDetails] = useState<Record<ProviderKind, boolean>>({
     codex: Boolean(
       settings.providers.codex.binaryPath !== DEFAULT_UNIFIED_SETTINGS.providers.codex.binaryPath ||
@@ -575,6 +587,25 @@ export function GeneralSettingsPanel() {
         setIsRefreshingProviders(false);
       });
   }, [queryClient]);
+
+  const updateGithubSecrets = useCallback(
+    async (patch: { privateKeyPem?: string | null; webhookSecret?: string | null }) => {
+      setIsUpdatingGithubSecrets(true);
+      try {
+        await ensureNativeApi().server.updateGithubAppSecrets(patch);
+        await queryClient.invalidateQueries({ queryKey: serverQueryKeys.githubAppSecretsStatus() });
+      } catch (error) {
+        toastManager.add({
+          type: "error",
+          title: "Failed to update GitHub App secrets",
+          description: error instanceof Error ? error.message : "Unknown error",
+        });
+      } finally {
+        setIsUpdatingGithubSecrets(false);
+      }
+    },
+    [queryClient],
+  );
 
   const keybindingsConfigPath = serverConfigQuery.data?.keybindingsConfigPath ?? null;
   const availableEditors = serverConfigQuery.data?.availableEditors;
@@ -762,6 +793,10 @@ export function GeneralSettingsPanel() {
           serverProviders[0]!.checkedAt,
         )
       : null;
+  const githubSecretsStatus = githubAppSecretsQuery.data ?? {
+    hasPrivateKey: false,
+    hasWebhookSecret: false,
+  };
   return (
     <SettingsPageContainer>
       <SettingsSection title="General">
@@ -1399,6 +1434,178 @@ export function GeneralSettingsPanel() {
             </div>
           );
         })}
+      </SettingsSection>
+
+      <SettingsSection title="GitHub App">
+        <SettingsRow
+          title="Enable automation"
+          description="Allow GitHub App webhooks to start and clean up T3 threads."
+          resetAction={
+            !Equal.equals(settings.githubApp, DEFAULT_UNIFIED_SETTINGS.githubApp) ? (
+              <SettingResetButton
+                label="GitHub App settings"
+                onClick={() =>
+                  updateSettings({
+                    githubApp: DEFAULT_UNIFIED_SETTINGS.githubApp,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Switch
+              checked={settings.githubApp.enabled}
+              onCheckedChange={(checked) =>
+                updateSettings({
+                  githubApp: {
+                    ...settings.githubApp,
+                    enabled: Boolean(checked),
+                  },
+                })
+              }
+              aria-label="Enable GitHub app automation"
+            />
+          }
+        >
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            <label className="block">
+              <span className="text-xs font-medium text-foreground">GitHub App ID</span>
+              <Input
+                className="mt-1.5"
+                value={settings.githubApp.appId}
+                onChange={(event) =>
+                  updateSettings({
+                    githubApp: {
+                      ...settings.githubApp,
+                      appId: event.target.value,
+                    },
+                  })
+                }
+                placeholder="123456"
+                spellCheck={false}
+              />
+            </label>
+            <label className="block">
+              <span className="text-xs font-medium text-foreground">Bot login</span>
+              <Input
+                className="mt-1.5"
+                value={settings.githubApp.botLogin}
+                onChange={(event) =>
+                  updateSettings({
+                    githubApp: {
+                      ...settings.githubApp,
+                      botLogin: event.target.value,
+                    },
+                  })
+                }
+                placeholder="t3-bot"
+                spellCheck={false}
+              />
+            </label>
+          </div>
+        </SettingsRow>
+
+        <SettingsRow
+          title="Secrets"
+          description="Secrets are stored server-side only and never returned to the client."
+          status={
+            <span className="font-mono">
+              privateKey={githubSecretsStatus.hasPrivateKey ? "set" : "missing"} · webhookSecret=
+              {githubSecretsStatus.hasWebhookSecret ? "set" : "missing"}
+            </span>
+          }
+          control={
+            <Button
+              size="xs"
+              variant="outline"
+              disabled={isUpdatingGithubSecrets}
+              onClick={() =>
+                void queryClient.invalidateQueries({
+                  queryKey: serverQueryKeys.githubAppSecretsStatus(),
+                })
+              }
+            >
+              Refresh
+            </Button>
+          }
+        >
+          <div className="mt-3 space-y-2">
+            <label className="block">
+              <span className="text-xs font-medium text-foreground">Private key PEM</span>
+              <textarea
+                className="mt-1.5 block min-h-24 w-full rounded-md border bg-background px-3 py-2 text-xs"
+                value={githubPrivateKeyInput}
+                onChange={(event) => setGithubPrivateKeyInput(event.target.value)}
+                placeholder="Paste private key to set. Leave blank and click Clear to remove."
+              />
+              <div className="mt-2 flex items-center gap-2">
+                <Button
+                  size="xs"
+                  variant="outline"
+                  disabled={isUpdatingGithubSecrets}
+                  onClick={() =>
+                    void updateGithubSecrets({
+                      privateKeyPem:
+                        githubPrivateKeyInput.length > 0 ? githubPrivateKeyInput : null,
+                    }).then(() => setGithubPrivateKeyInput(""))
+                  }
+                >
+                  Save key
+                </Button>
+                <Button
+                  size="xs"
+                  variant="ghost"
+                  disabled={isUpdatingGithubSecrets}
+                  onClick={() =>
+                    void updateGithubSecrets({ privateKeyPem: null }).then(() =>
+                      setGithubPrivateKeyInput(""),
+                    )
+                  }
+                >
+                  Clear key
+                </Button>
+              </div>
+            </label>
+
+            <label className="block">
+              <span className="text-xs font-medium text-foreground">Webhook secret</span>
+              <Input
+                className="mt-1.5"
+                value={githubWebhookSecretInput}
+                onChange={(event) => setGithubWebhookSecretInput(event.target.value)}
+                placeholder="Set webhook secret"
+                spellCheck={false}
+              />
+              <div className="mt-2 flex items-center gap-2">
+                <Button
+                  size="xs"
+                  variant="outline"
+                  disabled={isUpdatingGithubSecrets}
+                  onClick={() =>
+                    void updateGithubSecrets({
+                      webhookSecret:
+                        githubWebhookSecretInput.length > 0 ? githubWebhookSecretInput : null,
+                    }).then(() => setGithubWebhookSecretInput(""))
+                  }
+                >
+                  Save secret
+                </Button>
+                <Button
+                  size="xs"
+                  variant="ghost"
+                  disabled={isUpdatingGithubSecrets}
+                  onClick={() =>
+                    void updateGithubSecrets({ webhookSecret: null }).then(() =>
+                      setGithubWebhookSecretInput(""),
+                    )
+                  }
+                >
+                  Clear secret
+                </Button>
+              </div>
+            </label>
+          </div>
+        </SettingsRow>
       </SettingsSection>
 
       <SettingsSection title="Advanced">

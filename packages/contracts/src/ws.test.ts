@@ -73,6 +73,22 @@ it.effect("accepts git.preparePullRequestThread requests", () =>
   }),
 );
 
+it.effect("accepts github app secrets update requests", () =>
+  Effect.gen(function* () {
+    const parsed = yield* decodeWebSocketRequest({
+      id: "req-gh-secrets-1",
+      body: {
+        _tag: WS_METHODS.serverUpdateGithubAppSecrets,
+        patch: {
+          privateKeyPem: "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----",
+          webhookSecret: "secret",
+        },
+      },
+    });
+    assert.strictEqual(parsed.body._tag, WS_METHODS.serverUpdateGithubAppSecrets);
+  }),
+);
+
 it.effect("accepts typed websocket push envelopes with sequence", () =>
   Effect.gen(function* () {
     const parsed = yield* decodeWsResponse({

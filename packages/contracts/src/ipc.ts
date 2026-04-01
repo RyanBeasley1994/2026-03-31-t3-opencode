@@ -51,7 +51,12 @@ import type {
   OrchestrationReadModel,
 } from "./orchestration";
 import { EditorId } from "./editor";
-import { ServerSettings, ServerSettingsPatch } from "./settings";
+import {
+  GithubAppSecretsStatus,
+  GithubAppSecretsUpdate,
+  ServerSettings,
+  ServerSettingsPatch,
+} from "./settings";
 
 export interface ContextMenuItem<T extends string = string> {
   id: T;
@@ -176,6 +181,8 @@ export interface NativeApi {
     upsertKeybinding: (input: ServerUpsertKeybindingInput) => Promise<ServerUpsertKeybindingResult>;
     getSettings: () => Promise<ServerSettings>;
     updateSettings: (patch: ServerSettingsPatch) => Promise<ServerSettings>;
+    getGithubAppSecretsStatus: () => Promise<GithubAppSecretsStatus>;
+    updateGithubAppSecrets: (patch: GithubAppSecretsUpdate) => Promise<GithubAppSecretsStatus>;
   };
   orchestration: {
     getSnapshot: () => Promise<OrchestrationReadModel>;

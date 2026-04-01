@@ -214,6 +214,10 @@ export function createWsNativeApi(): NativeApi {
       upsertKeybinding: (input) => transport.request(WS_METHODS.serverUpsertKeybinding, input),
       getSettings: () => transport.request(WS_METHODS.serverGetSettings),
       updateSettings: (patch) => transport.request(WS_METHODS.serverUpdateSettings, { patch }),
+      getGithubAppSecretsStatus: () =>
+        transport.request(WS_METHODS.serverGetGithubAppSecretsStatus),
+      updateGithubAppSecrets: (patch) =>
+        transport.request(WS_METHODS.serverUpdateGithubAppSecrets, { patch }),
     },
     orchestration: {
       getSnapshot: () => transport.request(ORCHESTRATION_WS_METHODS.getSnapshot),

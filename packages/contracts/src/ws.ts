@@ -38,7 +38,7 @@ import { KeybindingRule } from "./keybindings";
 import { ProjectSearchEntriesInput, ProjectWriteFileInput } from "./project";
 import { OpenInEditorInput } from "./editor";
 import { ServerConfigUpdatedPayload, ServerProviderUpdatedPayload } from "./server";
-import { ServerSettingsPatch } from "./settings";
+import { GithubAppSecretsUpdate, ServerSettingsPatch } from "./settings";
 
 // ── WebSocket RPC Method Names ───────────────────────────────────────
 
@@ -80,6 +80,8 @@ export const WS_METHODS = {
   serverUpsertKeybinding: "server.upsertKeybinding",
   serverGetSettings: "server.getSettings",
   serverUpdateSettings: "server.updateSettings",
+  serverGetGithubAppSecretsStatus: "server.getGithubAppSecretsStatus",
+  serverUpdateGithubAppSecrets: "server.updateGithubAppSecrets",
 } as const;
 
 // ── Push Event Channels ──────────────────────────────────────────────
@@ -149,6 +151,11 @@ const WebSocketRequestBody = Schema.Union([
   tagRequestBody(WS_METHODS.serverUpsertKeybinding, KeybindingRule),
   tagRequestBody(WS_METHODS.serverGetSettings, Schema.Struct({})),
   tagRequestBody(WS_METHODS.serverUpdateSettings, Schema.Struct({ patch: ServerSettingsPatch })),
+  tagRequestBody(WS_METHODS.serverGetGithubAppSecretsStatus, Schema.Struct({})),
+  tagRequestBody(
+    WS_METHODS.serverUpdateGithubAppSecrets,
+    Schema.Struct({ patch: GithubAppSecretsUpdate }),
+  ),
 ]);
 
 export const WebSocketRequest = Schema.Struct({
