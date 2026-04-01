@@ -43,7 +43,7 @@ const makeGitHubApi = Effect.gen(function* () {
         Effect.mapError((cause) => apiError("readPrivateKey", "Failed to check secrets file.", cause)),
       );
       if (!exists) {
-        return yield* Effect.fail(apiError("readPrivateKey", "GitHub App private key not configured. Set it in Settings > GitHub App."));
+        return yield* apiError("readPrivateKey", "GitHub App private key not configured. Set it in Settings > GitHub App."));
       }
       const raw = yield* fs.readFileString(secretsPath).pipe(
         Effect.mapError((cause) => apiError("readPrivateKey", "Failed to read secrets file.", cause)),
@@ -51,7 +51,7 @@ const makeGitHubApi = Effect.gen(function* () {
       const parsed = JSON.parse(raw) as { privateKeyPem?: string };
       const pem = parsed.privateKeyPem?.trim() ?? "";
       if (pem.length === 0) {
-        return yield* Effect.fail(apiError("readPrivateKey", "GitHub App private key is empty. Set it in Settings > GitHub App."));
+        return yield* apiError("readPrivateKey", "GitHub App private key is empty. Set it in Settings > GitHub App."));
       }
       return pem;
     });
@@ -71,12 +71,14 @@ const makeGitHubApi = Effect.gen(function* () {
       return parsed;
     });
 
-  const getToken = (cwd: string) =>
+  const getToken = (cwd: string): Effect.Effect<{ token: string; owner: string; name: string }, GitHubCliError> =>
     Effect.gen(function* () {
-      const settings = yield* serverSettings.getSettings;
+      const settings = yield* serverSettings.getSettings.pipe(
+        Effect.mapError((cause) => apiError("getToken", "Failed to read server settings.", cause)),
+      );
       const appId = settings.githubApp.appId.trim();
       if (appId.length === 0) {
-        return yield* Effect.fail(apiError("getToken", "GitHub App ID is not configured. Set it in Settings > GitHub App."));
+        return yield* apiError("getToken", "GitHub App ID is not configured. Set it in Settings > GitHub App.");
       }
       const privateKeyPem = yield* readPrivateKey();
       const repo = yield* getRepoContext(cwd);
@@ -205,7 +207,7 @@ const makeGitHubApi = Effect.gen(function* () {
 
       const response = yield* githubApiRequest({
         method: "GET",
-        path: `/repos/${encodeURIComponent(input.repository.replace("/", "/")}`,
+        path: `/repos/${input.repository}`,
         token,
       }).pipe(Effect.mapError((cause) => apiError("getRepositoryCloneUrls", cause.message, cause)));
 
