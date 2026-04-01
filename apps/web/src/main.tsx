@@ -22,3 +22,12 @@ ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
     <RouterProvider router={router} />
   </React.StrictMode>,
 );
+
+// Register service worker for PWA support (production only)
+if ("serviceWorker" in navigator && !isElectron) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").catch(() => {
+      // SW registration failed — app works fine without it
+    });
+  });
+}

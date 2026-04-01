@@ -618,18 +618,20 @@ export default function Sidebar() {
       const createdAt = new Date().toISOString();
       const title = cwd.split(/[/\\]/).findLast(isNonEmptyString) ?? cwd;
       try {
+        let resolvedCwd = cwd;
         if (options?.cloneRepository) {
-          await api.projects.cloneGithubRepository({
+          const cloneResult = await api.projects.cloneGithubRepository({
             repository: options.cloneRepository,
             destinationPath: cwd,
           });
+          resolvedCwd = cloneResult.workspaceRoot;
         }
         await api.orchestration.dispatchCommand({
           type: "project.create",
           commandId: newCommandId(),
           projectId,
           title,
-          workspaceRoot: cwd,
+          workspaceRoot: resolvedCwd,
           defaultModelSelection: {
             provider: "codex",
             model: DEFAULT_MODEL_BY_PROVIDER.codex,
@@ -1923,9 +1925,11 @@ export default function Sidebar() {
               <span className="truncate text-sm font-medium tracking-tight text-muted-foreground">
                 Code
               </span>
-              <span className="rounded-full bg-muted/50 px-1.5 py-0.5 text-[8px] font-medium uppercase tracking-[0.18em] text-muted-foreground/60">
-                {APP_STAGE_LABEL}
-              </span>
+              {APP_STAGE_LABEL && (
+                <span className="rounded-full bg-muted/50 px-1.5 py-0.5 text-[8px] font-medium uppercase tracking-[0.18em] text-muted-foreground/60">
+                  {APP_STAGE_LABEL}
+                </span>
+              )}
             </div>
           }
         />
@@ -2132,7 +2136,9 @@ export default function Sidebar() {
                           ? "border-red-500/70 focus:border-red-500"
                           : "border-border focus:border-ring"
                       }`}
-                      placeholder={cloneFromGithub ? "~/Projects/repo-name (optional)" : "/path/to/project"}
+                      placeholder={
+                        cloneFromGithub ? "~/Projects/repo-name (optional)" : "/path/to/project"
+                      }
                       value={newCwd}
                       onChange={(event) => {
                         setNewCwd(event.target.value);

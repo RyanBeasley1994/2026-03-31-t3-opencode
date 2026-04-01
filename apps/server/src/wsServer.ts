@@ -946,7 +946,8 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
 
         // Try GitHub App first if configured, fall back to gh CLI
         const settings = yield* serverSettingsManager.getSettings;
-        const useGithubApp = settings.githubApp.enabled && settings.githubApp.appId.trim().length > 0;
+        const useGithubApp =
+          settings.githubApp.enabled && settings.githubApp.appId.trim().length > 0;
 
         type RepoEntry = {
           readonly nameWithOwner: string;
@@ -959,16 +960,14 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
         let repositories: readonly RepoEntry[];
 
         if (useGithubApp) {
-          const appRepos = yield* githubAppAutomation
-            .listRepositories({ limit })
-            .pipe(
-              Effect.mapError(
-                (cause) =>
-                  new RouteRequestError({
-                    message: `Failed to list GitHub App repositories: ${cause.message}`,
-                  }),
-              ),
-            );
+          const appRepos = yield* githubAppAutomation.listRepositories({ limit }).pipe(
+            Effect.mapError(
+              (cause) =>
+                new RouteRequestError({
+                  message: `Failed to list GitHub App repositories: ${cause.message}`,
+                }),
+            ),
+          );
           repositories = appRepos as RepoEntry[];
         } else {
           const ghRepoListArgs = [

@@ -145,6 +145,53 @@ body,
   overscroll-behavior-y: none;
 }
 
+/* Safe area insets for notched/dynamic island devices */
+#root {
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+
+/* Mobile touch improvements */
+@media (max-width: 767px) {
+  /* Prevent text selection on interactive elements */
+  button,
+  [role="button"],
+  [role="menuitem"] {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  /* Minimum touch target sizes (44px per Apple HIG) */
+  button,
+  [role="button"],
+  a,
+  [role="menuitem"] {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  /* Except for inline/icon buttons that already have explicit small sizing */
+  .size-7,
+  .size-6,
+  .size-5 {
+    min-height: unset;
+    min-width: unset;
+  }
+
+  /* Prevent iOS tap highlight */
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Smoother scrolling on mobile */
+  .overflow-y-auto,
+  .overflow-y-scroll {
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
 body::after {
   content: "";
   position: fixed;
@@ -210,6 +257,14 @@ input {
 
 .turn-chip-strip::-webkit-scrollbar {
   display: none;
+}
+
+/* PWA standalone mode adjustments */
+@media (display-mode: standalone) {
+  body {
+    /* Prevent pull-to-refresh in standalone PWA */
+    overscroll-behavior-y: contain;
+  }
 }
 
 /* Terminal drawer scrollbar parity with chat */
