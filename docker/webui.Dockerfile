@@ -6,7 +6,7 @@ RUN apk add --no-cache python3 make g++
 
 COPY . .
 
-RUN bun install --frozen-lockfile
+RUN bun install --frozen-lockfile --concurrent-scripts=1 --filter=@t3tools/web
 
 ENV PORT=5733
 ENV VITE_WS_URL=wss://aicoder.propriotec.app/ws

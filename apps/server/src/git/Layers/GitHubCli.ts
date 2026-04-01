@@ -12,12 +12,27 @@ import {
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 
+function formatGitHubCliMissingHint(): string {
+  // Keep this short; it is surfaced to end users via RouteRequestError.
+  // Prefer the most likely install instructions by platform.
+  switch (process.platform) {
+    case "darwin":
+      return "Install it with `brew install gh`.";
+    case "linux":
+      return "Install it from your distro packages (e.g. `apt-get install gh`) or GitHub's releases.";
+    case "win32":
+      return "Install it with `winget install GitHub.cli`.";
+    default:
+      return "Install GitHub CLI (`gh`) and ensure it is on PATH.";
+  }
+}
+
 function normalizeGitHubCliError(operation: "execute" | "stdout", error: unknown): GitHubCliError {
   if (error instanceof Error) {
     if (error.message.includes("Command not found: gh")) {
       return new GitHubCliError({
         operation,
-        detail: "GitHub CLI (`gh`) is required but not available on PATH.",
+        detail: `GitHub CLI (\`gh\`) is required but not available on PATH. ${formatGitHubCliMissingHint()}`,
         cause: error,
       });
     }

@@ -2,11 +2,11 @@ FROM oven/bun:1.3.9-alpine
 
 WORKDIR /app
 
-RUN apk add --no-cache python3 make g++
+RUN apk add --no-cache python3 make g++ github-cli
 
 COPY . .
 
-RUN bun install --frozen-lockfile
+RUN bun install --frozen-lockfile --concurrent-scripts=1 --filter=t3
 
 ENV T3CODE_HOME=/app/.t3code
 ENV T3CODE_MODE=web

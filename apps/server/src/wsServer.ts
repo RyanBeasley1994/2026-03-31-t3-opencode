@@ -7,6 +7,7 @@
  * @module Server
  */
 import http from "node:http";
+import { timingSafeEqual } from "node:crypto";
 import type { Duplex } from "node:stream";
 
 import Mime from "@effect/platform-node/Mime";
@@ -113,15 +114,64 @@ const isServerNotRunningError = (error: Error): boolean => {
   );
 };
 
-function rejectUpgrade(socket: Duplex, statusCode: number, message: string): void {
+function rejectUpgrade(
+  socket: Duplex,
+  statusCode: number,
+  message: string,
+  headers: Record<string, string> = {},
+): void {
+  const headerEntries = Object.entries(headers)
+    .map(([name, value]) => `${name}: ${value}\r\n`)
+    .join("");
   socket.end(
     `HTTP/1.1 ${statusCode} ${statusCode === 401 ? "Unauthorized" : "Bad Request"}\r\n` +
       "Connection: close\r\n" +
       "Content-Type: text/plain\r\n" +
+      headerEntries +
       `Content-Length: ${Buffer.byteLength(message)}\r\n` +
       "\r\n" +
       message,
   );
+}
+
+const WEB_UI_AUTH_CHALLENGE_HEADER = 'Basic realm="T3 Code", charset="UTF-8"';
+
+function decodeBasicAuthHeader(
+  headerValue: string | undefined,
+): { readonly username: string; readonly password: string } | null {
+  if (!headerValue) return null;
+  const [scheme, encoded] = headerValue.split(/\s+/, 2);
+  if (!scheme || !encoded || scheme.toLowerCase() !== "basic") return null;
+  let decoded: string;
+  try {
+    decoded = Buffer.from(encoded, "base64").toString("utf8");
+  } catch {
+    return null;
+  }
+  const delimiterIndex = decoded.indexOf(":");
+  if (delimiterIndex < 0) return null;
+  return {
+    username: decoded.slice(0, delimiterIndex),
+    password: decoded.slice(delimiterIndex + 1),
+  };
+}
+
+function hasMatchingWebUiCredentials(
+  providedAuthHeader: string | undefined,
+  expectedCredentials: {
+    readonly username: string;
+    readonly password: string;
+  },
+): boolean {
+  const decoded = decodeBasicAuthHeader(providedAuthHeader);
+  if (!decoded) return false;
+  const expected = Buffer.from(
+    `${expectedCredentials.username}:${expectedCredentials.password}`,
+    "utf8",
+  );
+  const provided = Buffer.from(`${decoded.username}:${decoded.password}`, "utf8");
+  if (expected.byteLength !== provided.byteLength) return false;
+  return timingSafeEqual(expected, provided);
 }
 
 function websocketRawToString(raw: unknown): string | null {
@@ -292,6 +342,7 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
     staticDir,
     devUrl,
     authToken,
+    webUiAuth,
     host,
     logWebSocketEvents,
     autoBootstrapProjectFromCwd,
@@ -490,6 +541,22 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
     void runPromise(
       Effect.gen(function* () {
         const url = new URL(req.url ?? "/", `http://localhost:${port}`);
+        if (
+          webUiAuth &&
+          url.pathname !== "/api/github/webhook" &&
+          !hasMatchingWebUiCredentials(req.headers.authorization, webUiAuth)
+        ) {
+          respond(
+            401,
+            {
+              "Content-Type": "text/plain",
+              "WWW-Authenticate": WEB_UI_AUTH_CHALLENGE_HEADER,
+            },
+            "Unauthorized",
+          );
+          return;
+        }
+
         if (tryHandleProjectFaviconRequest(url, res)) {
           return;
         }
@@ -1144,6 +1211,13 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
 
   httpServer.on("upgrade", (request, socket, head) => {
     socket.on("error", () => {}); // Prevent unhandled `EPIPE`/`ECONNRESET` from crashing the process if the client disconnects mid-handshake
+
+    if (webUiAuth && !hasMatchingWebUiCredentials(request.headers.authorization, webUiAuth)) {
+      rejectUpgrade(socket, 401, "Unauthorized WebSocket connection", {
+        "WWW-Authenticate": WEB_UI_AUTH_CHALLENGE_HEADER,
+      });
+      return;
+    }
 
     if (authToken) {
       let providedToken: string | null = null;

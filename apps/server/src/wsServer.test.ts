@@ -307,10 +307,14 @@ function asWebSocketResponse(message: unknown): WebSocketResponse | null {
   return message as WebSocketResponse;
 }
 
-function connectWsOnce(port: number, token?: string): Promise<WebSocket> {
+function connectWsOnce(
+  port: number,
+  token?: string,
+  headers?: Record<string, string>,
+): Promise<WebSocket> {
   return new Promise((resolve, reject) => {
     const query = token ? `?token=${encodeURIComponent(token)}` : "";
-    const ws = new WebSocket(`ws://127.0.0.1:${port}/${query}`);
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/${query}`, headers ? { headers } : undefined);
     const channels: SocketChannels = {
       push: { queue: [], waiters: [] },
       response: { queue: [], waiters: [] },
@@ -334,12 +338,17 @@ function connectWsOnce(port: number, token?: string): Promise<WebSocket> {
   });
 }
 
-async function connectWs(port: number, token?: string, attempts = 5): Promise<WebSocket> {
+async function connectWs(
+  port: number,
+  token?: string,
+  attempts = 5,
+  headers?: Record<string, string>,
+): Promise<WebSocket> {
   let lastError: unknown = new Error("WebSocket connection failed");
 
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     try {
-      return await connectWsOnce(port, token);
+      return await connectWsOnce(port, token, headers);
     } catch (error) {
       lastError = error;
       if (attempt < attempts - 1) {
@@ -355,8 +364,9 @@ async function connectWs(port: number, token?: string, attempts = 5): Promise<We
 async function connectAndAwaitWelcome(
   port: number,
   token?: string,
+  headers?: Record<string, string>,
 ): Promise<[WebSocket, WsPushMessage<typeof WS_CHANNELS.serverWelcome>]> {
-  const ws = await connectWs(port, token);
+  const ws = await connectWs(port, token, 5, headers);
   const welcome = await waitForPush(ws, WS_CHANNELS.serverWelcome);
   return [ws, welcome];
 }
@@ -428,6 +438,7 @@ async function rewriteKeybindingsAndWaitForPush(
 async function requestPath(
   port: number,
   requestPath: string,
+  headers: Record<string, string> = {},
 ): Promise<{ statusCode: number; body: string }> {
   return new Promise((resolve, reject) => {
     const req = Http.request(
@@ -436,6 +447,7 @@ async function requestPath(
         port,
         path: requestPath,
         method: "GET",
+        headers,
       },
       (res) => {
         const chunks: Buffer[] = [];
@@ -520,6 +532,10 @@ function ensureParentDir(filePath: string): void {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
 }
 
+function makeBasicAuthHeader(username: string, password: string): string {
+  return `Basic ${Buffer.from(`${username}:${password}`).toString("base64")}`;
+}
+
 function deriveServerPathsSync(baseDir: string, devUrl: URL | undefined) {
   return Effect.runSync(
     deriveServerPaths(baseDir, devUrl).pipe(Effect.provide(NodeServices.layer)),
@@ -549,6 +565,10 @@ describe("WebSocket Server", () => {
       logWebSocketEvents?: boolean;
       devUrl?: string;
       authToken?: string;
+      webUiAuth?: {
+        username: string;
+        password: string;
+      };
       baseDir?: string;
       staticDir?: string;
       providerLayer?: Layer.Layer<ProviderService | OpenCodeServerPool, never>;
@@ -589,6 +609,7 @@ describe("WebSocket Server", () => {
       devUrl,
       noBrowser: true,
       authToken: options.authToken,
+      webUiAuth: options.webUiAuth,
       autoBootstrapProjectFromCwd: options.autoBootstrapProjectFromCwd ?? false,
       logWebSocketEvents: options.logWebSocketEvents ?? Boolean(options.devUrl),
     } satisfies ServerConfigShape);
@@ -731,6 +752,35 @@ describe("WebSocket Server", () => {
     const response = await fetch(`http://127.0.0.1:${port}/`);
     expect(response.status).toBe(200);
     expect(await response.text()).toContain("static-root");
+  });
+
+  it("requires basic auth for static web ui routes when configured", async () => {
+    const baseDir = makeTempDir("t3code-state-static-auth-");
+    const staticDir = makeTempDir("t3code-static-auth-");
+    fs.writeFileSync(path.join(staticDir, "index.html"), "<h1>static-auth</h1>", "utf8");
+
+    server = await createTestServer({
+      cwd: "/test/project",
+      baseDir,
+      staticDir,
+      webUiAuth: {
+        username: "admin",
+        password: "s3cret",
+      },
+    });
+    const addr = server.address();
+    const port = typeof addr === "object" && addr !== null ? addr.port : 0;
+    expect(port).toBeGreaterThan(0);
+
+    const unauthorized = await requestPath(port, "/");
+    expect(unauthorized.statusCode).toBe(401);
+    expect(unauthorized.body).toBe("Unauthorized");
+
+    const authorized = await requestPath(port, "/", {
+      authorization: makeBasicAuthHeader("admin", "s3cret"),
+    });
+    expect(authorized.statusCode).toBe(200);
+    expect(authorized.body).toContain("static-auth");
   });
 
   it("rejects static path traversal attempts", async () => {
@@ -2219,6 +2269,25 @@ describe("WebSocket Server", () => {
     await expect(connectWs(port)).rejects.toThrow("WebSocket connection failed");
 
     const [authorizedWs] = await connectAndAwaitWelcome(port, "secret-token");
+    connections.push(authorizedWs);
+  });
+
+  it("requires basic auth for websocket connections when configured", async () => {
+    server = await createTestServer({
+      cwd: "/test",
+      webUiAuth: {
+        username: "admin",
+        password: "s3cret",
+      },
+    });
+    const addr = server.address();
+    const port = typeof addr === "object" && addr !== null ? addr.port : 0;
+
+    await expect(connectWs(port)).rejects.toThrow("WebSocket connection failed");
+
+    const [authorizedWs] = await connectAndAwaitWelcome(port, undefined, {
+      authorization: makeBasicAuthHeader("admin", "s3cret"),
+    });
     connections.push(authorizedWs);
   });
 });

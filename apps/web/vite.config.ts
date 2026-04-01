@@ -43,6 +43,7 @@ export default defineConfig({
   server: {
     port,
     strictPort: true,
+    allowedHosts: true,
     hmr: {
       // Explicit config so Vite's HMR WebSocket connects reliably
       // inside Electron's BrowserWindow. Vite 8 uses console.debug for

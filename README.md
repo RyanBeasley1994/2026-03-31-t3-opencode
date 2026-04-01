@@ -17,6 +17,17 @@ T3 Code is a minimal web GUI for coding agents (currently Codex and Claude, more
 npx t3
 ```
 
+### Protect the Web UI with a username and password
+
+Set both environment variables before starting the server:
+
+```bash
+export T3CODE_WEBUI_USERNAME="admin"
+export T3CODE_WEBUI_PASSWORD="change-me"
+```
+
+When both are set, the server requires HTTP Basic Auth for Web UI routes and WebSocket connections.
+
 ### Desktop app
 
 Install the latest version of the desktop app from [GitHub Releases](https://github.com/pingdotgg/t3code/releases), or from your favorite package registry:
