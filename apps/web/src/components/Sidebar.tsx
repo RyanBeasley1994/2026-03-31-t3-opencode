@@ -88,7 +88,7 @@ import {
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "./ui/alert";
 import { Button } from "./ui/button";
 import { Menu, MenuGroup, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "./ui/menu";
-import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "./ui/select";
+
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import {
   SidebarContent,
@@ -401,6 +401,8 @@ export default function Sidebar() {
   >([]);
   const [isLoadingGithubRepositories, setIsLoadingGithubRepositories] = useState(false);
   const [selectedGithubRepository, setSelectedGithubRepository] = useState<string>("");
+  const [githubRepoSearchQuery, setGithubRepoSearchQuery] = useState("");
+  const [githubRepoDropdownOpen, setGithubRepoDropdownOpen] = useState(false);
   const addProjectInputRef = useRef<HTMLInputElement | null>(null);
   const [renamingThreadId, setRenamingThreadId] = useState<ThreadId | null>(null);
   const [renamingTitle, setRenamingTitle] = useState("");
@@ -433,6 +435,15 @@ export default function Sidebar() {
       ) ?? null,
     [githubRepositories, selectedGithubRepository],
   );
+  const filteredGithubRepositories = useMemo(() => {
+    const query = githubRepoSearchQuery.trim().toLowerCase();
+    if (query.length === 0) return githubRepositories;
+    return githubRepositories.filter(
+      (repo) =>
+        repo.nameWithOwner.toLowerCase().includes(query) ||
+        (repo.description?.toLowerCase().includes(query) ?? false),
+    );
+  }, [githubRepositories, githubRepoSearchQuery]);
   const projectCwdById = useMemo(
     () => new Map(projects.map((project) => [project.id, project.cwd] as const)),
     [projects],
@@ -592,6 +603,7 @@ export default function Sidebar() {
         setCloneFromGithub(false);
         setGithubRepositories([]);
         setSelectedGithubRepository("");
+        setGithubRepoSearchQuery("");
         setAddingProject(false);
       };
 
@@ -660,16 +672,19 @@ export default function Sidebar() {
         setAddProjectError("Select a GitHub repository to clone.");
         return;
       }
-      void addProjectFromPath(newCwd, { cloneRepository: selectedGithubRepository });
+      const repoName = selectedGithubRepository.split("/").pop() ?? selectedGithubRepository;
+      const clonePath = newCwd.trim().length > 0 ? newCwd : `~/Projects/${repoName}`;
+      void addProjectFromPath(clonePath, { cloneRepository: selectedGithubRepository });
       return;
     }
     void addProjectFromPath(newCwd);
   };
 
   const canAddProject =
-    newCwd.trim().length > 0 &&
     !isAddingProject &&
-    (!cloneFromGithub || (selectedGithubRepository.length > 0 && !isLoadingGithubRepositories));
+    (cloneFromGithub
+      ? selectedGithubRepository.length > 0 && !isLoadingGithubRepositories
+      : newCwd.trim().length > 0);
 
   const handlePickFolder = async () => {
     const api = readNativeApi();
@@ -2041,37 +2056,55 @@ export default function Sidebar() {
                     </label>
                     {cloneFromGithub && (
                       <div className="space-y-1">
-                        <div className="flex gap-1.5">
-                          <Select
-                            value={selectedGithubRepository}
-                            onValueChange={(value) => {
-                              setSelectedGithubRepository(value ?? "");
-                              setAddProjectError(null);
-                            }}
-                            disabled={isAddingProject || isLoadingGithubRepositories}
-                          >
-                            <SelectTrigger size="sm" className="min-w-0 flex-1 rounded-md">
-                              <SelectValue
-                                placeholder={
-                                  isLoadingGithubRepositories
-                                    ? "Loading repositories..."
-                                    : githubRepositories.length === 0
-                                      ? "No repositories found"
-                                      : "Select repository"
-                                }
-                              />
-                            </SelectTrigger>
-                            <SelectPopup>
-                              {githubRepositories.map((repository) => (
-                                <SelectItem
-                                  key={repository.nameWithOwner}
-                                  value={repository.nameWithOwner}
-                                >
-                                  {repository.nameWithOwner}
-                                </SelectItem>
-                              ))}
-                            </SelectPopup>
-                          </Select>
+                        <div className="relative flex gap-1.5">
+                          <div className="relative min-w-0 flex-1">
+                            <input
+                              className="w-full rounded-md border border-border bg-secondary px-2 py-1 text-xs text-foreground placeholder:text-muted-foreground/40 focus:border-ring focus:outline-none"
+                              placeholder={
+                                isLoadingGithubRepositories
+                                  ? "Loading repositories..."
+                                  : githubRepositories.length === 0
+                                    ? "No repositories found"
+                                    : "Search repositories..."
+                              }
+                              value={githubRepoSearchQuery}
+                              onChange={(event) => {
+                                setGithubRepoSearchQuery(event.target.value);
+                                setGithubRepoDropdownOpen(true);
+                                setAddProjectError(null);
+                              }}
+                              onFocus={() => setGithubRepoDropdownOpen(true)}
+                              onBlur={() => {
+                                // Delay to allow click on dropdown item
+                                setTimeout(() => setGithubRepoDropdownOpen(false), 150);
+                              }}
+                              disabled={isAddingProject || isLoadingGithubRepositories}
+                            />
+                            {githubRepoDropdownOpen && filteredGithubRepositories.length > 0 && (
+                              <div className="absolute left-0 top-full z-50 mt-1 max-h-48 w-full overflow-y-auto rounded-md border border-border bg-popover shadow-md">
+                                {filteredGithubRepositories.map((repository) => (
+                                  <button
+                                    key={repository.nameWithOwner}
+                                    type="button"
+                                    className={`w-full px-2 py-1.5 text-left text-xs transition-colors hover:bg-accent ${
+                                      repository.nameWithOwner === selectedGithubRepository
+                                        ? "bg-accent/50 text-foreground"
+                                        : "text-foreground/80"
+                                    }`}
+                                    onMouseDown={(event) => {
+                                      event.preventDefault();
+                                      setSelectedGithubRepository(repository.nameWithOwner);
+                                      setGithubRepoSearchQuery(repository.nameWithOwner);
+                                      setGithubRepoDropdownOpen(false);
+                                      setAddProjectError(null);
+                                    }}
+                                  >
+                                    {repository.nameWithOwner}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
                           <button
                             type="button"
                             className="shrink-0 rounded-md border border-border bg-secondary px-2 py-1 text-[11px] text-foreground/80 transition-colors duration-150 hover:bg-accent hover:text-foreground disabled:opacity-60"
@@ -2099,7 +2132,7 @@ export default function Sidebar() {
                           ? "border-red-500/70 focus:border-red-500"
                           : "border-border focus:border-ring"
                       }`}
-                      placeholder="/path/to/project"
+                      placeholder={cloneFromGithub ? "~/Projects/repo-name (optional)" : "/path/to/project"}
                       value={newCwd}
                       onChange={(event) => {
                         setNewCwd(event.target.value);
