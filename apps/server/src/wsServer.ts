@@ -346,6 +346,7 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
     host,
     logWebSocketEvents,
     autoBootstrapProjectFromCwd,
+    githubOrg,
   } = serverConfig;
   const availableEditors = resolveAvailableEditors();
 
@@ -942,17 +943,19 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
       case WS_METHODS.projectsListGithubRepositories: {
         const body = stripRequestTag(request.body);
         const limit = body.limit ?? GH_REPO_LIST_DEFAULT_LIMIT;
+        const ghRepoListArgs = [
+          "repo",
+          "list",
+          ...(githubOrg ? [githubOrg] : []),
+          "--limit",
+          String(limit),
+          "--json",
+          "nameWithOwner,description,url,sshUrl,isPrivate",
+        ];
         const response = yield* gitHubCli
           .execute({
             cwd,
-            args: [
-              "repo",
-              "list",
-              "--limit",
-              String(limit),
-              "--json",
-              "nameWithOwner,description,url,sshUrl,isPrivate",
-            ],
+            args: ghRepoListArgs,
             timeoutMs: GH_REPO_LIST_TIMEOUT_MS,
           })
           .pipe(

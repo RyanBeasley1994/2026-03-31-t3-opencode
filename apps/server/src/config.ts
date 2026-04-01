@@ -51,6 +51,7 @@ export interface ServerConfigShape extends ServerDerivedPaths {
     | undefined;
   readonly autoBootstrapProjectFromCwd: boolean;
   readonly logWebSocketEvents: boolean;
+  readonly githubOrg: string | undefined;
 }
 
 export const deriveServerPaths = Effect.fn(function* (
@@ -116,6 +117,7 @@ export class ServerConfig extends ServiceMap.Service<ServerConfig, ServerConfigS
           staticDir: undefined,
           devUrl,
           noBrowser: false,
+          githubOrg: undefined,
         } satisfies ServerConfigShape;
       }),
     );

@@ -612,6 +612,7 @@ describe("WebSocket Server", () => {
       webUiAuth: options.webUiAuth,
       autoBootstrapProjectFromCwd: options.autoBootstrapProjectFromCwd ?? false,
       logWebSocketEvents: options.logWebSocketEvents ?? Boolean(options.devUrl),
+      githubOrg: undefined,
     } satisfies ServerConfigShape);
     const runtimeOverrides = Layer.mergeAll(
       options.gitManager ? Layer.succeed(GitManager, options.gitManager) : Layer.empty,

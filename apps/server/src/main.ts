@@ -144,6 +144,10 @@ const CliEnvConfig = Config.all({
     Config.option,
     Config.map(Option.getOrUndefined),
   ),
+  githubOrg: Config.string("T3CODE_GITHUB_ORG").pipe(
+    Config.option,
+    Config.map(Option.getOrUndefined),
+  ),
 });
 
 const resolveBooleanFlag = (flag: Option.Option<boolean>, envValue: boolean) =>
@@ -323,6 +327,7 @@ const ServerConfigLive = (input: CliInput) =>
         webUiAuth,
         autoBootstrapProjectFromCwd,
         logWebSocketEvents,
+        githubOrg: env.githubOrg,
       } satisfies ServerConfigShape;
 
       return config;
