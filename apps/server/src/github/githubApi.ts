@@ -7,9 +7,18 @@
  */
 import { createSign } from "node:crypto";
 
-import { Effect } from "effect";
+import { Data, Effect } from "effect";
 
 // ── Types ────────────────────────────────────────────────────────────
+
+export class GitHubApiError extends Data.TaggedError("GitHubApiError")<{
+  readonly detail: string;
+  readonly cause?: unknown;
+}> {
+  override get message(): string {
+    return this.detail;
+  }
+}
 
 export interface GitHubApiResponse {
   readonly status: number;
@@ -19,7 +28,7 @@ export interface GitHubApiResponse {
 
 // ── JWT ──────────────────────────────────────────────────────────────
 
-export const createAppJwt = (appId: string, privateKeyPem: string): Effect.Effect<string, Error> =>
+export const createAppJwt = (appId: string, privateKeyPem: string): Effect.Effect<string, GitHubApiError> =>
   Effect.try({
     try: () => {
       const now = Math.floor(Date.now() / 1000);
@@ -39,7 +48,7 @@ export const createAppJwt = (appId: string, privateKeyPem: string): Effect.Effec
         .sign(privateKeyPem, "base64url");
       return `${signingInput}.${signature}`;
     },
-    catch: (cause) => new Error(`Failed to create GitHub app JWT: ${cause}`),
+    catch: (cause) => new GitHubApiError({ detail: `Failed to create GitHub app JWT: ${cause}`, cause }),
   });
 
 // ── API request ──────────────────────────────────────────────────────
@@ -49,7 +58,7 @@ export const githubApiRequest = (input: {
   path: string;
   token: string;
   body?: unknown;
-}): Effect.Effect<GitHubApiResponse, Error> =>
+}): Effect.Effect<GitHubApiResponse, GitHubApiError> =>
   Effect.tryPromise({
     try: async () => {
       const response = await fetch(`https://api.github.com${input.path}`, {
@@ -67,7 +76,7 @@ export const githubApiRequest = (input: {
       const json = text.length > 0 ? (JSON.parse(text) as unknown) : null;
       return { status: response.status, ok: response.ok, json };
     },
-    catch: (cause) => new Error(`GitHub API request failed: ${cause}`),
+    catch: (cause) => new GitHubApiError({ detail: `GitHub API request failed: ${cause}`, cause }),
   });
 
 // ── Installation token ───────────────────────────────────────────────
@@ -76,7 +85,7 @@ export const getInstallationToken = (input: {
   appId: string;
   privateKeyPem: string;
   installationId: number;
-}): Effect.Effect<string, Error> =>
+}): Effect.Effect<string, GitHubApiError> =>
   Effect.gen(function* () {
     const jwt = yield* createAppJwt(input.appId, input.privateKeyPem);
     const response = yield* githubApiRequest({
@@ -86,15 +95,13 @@ export const getInstallationToken = (input: {
       body: {},
     });
     if (!response.ok || !response.json || typeof response.json !== "object") {
-      return yield* Effect.fail(
-        new Error(
-          `Installation token request failed with status ${response.status}.`,
-        ),
-      );
+      return yield* new GitHubApiError({
+        detail: `Installation token request failed with status ${response.status}.`,
+      });
     }
     const token = (response.json as Record<string, unknown>).token;
     if (typeof token !== "string" || token.trim().length === 0) {
-      return yield* Effect.fail(new Error("Installation token missing in response."));
+      return yield* new GitHubApiError({ detail: "Installation token missing in response." });
     }
     return token;
   });
@@ -106,7 +113,7 @@ export const getInstallationIdForRepo = (input: {
   privateKeyPem: string;
   owner: string;
   repo: string;
-}): Effect.Effect<number, Error> =>
+}): Effect.Effect<number, GitHubApiError> =>
   Effect.gen(function* () {
     const jwt = yield* createAppJwt(input.appId, input.privateKeyPem);
     const response = yield* githubApiRequest({
@@ -115,17 +122,15 @@ export const getInstallationIdForRepo = (input: {
       token: jwt,
     });
     if (!response.ok || !response.json || typeof response.json !== "object") {
-      return yield* Effect.fail(
-        new Error(
-          `Failed to get installation for ${input.owner}/${input.repo} (status ${response.status}).`,
-        ),
-      );
+      return yield* new GitHubApiError({
+        detail: `Failed to get installation for ${input.owner}/${input.repo} (status ${response.status}).`,
+      });
     }
     const id = (response.json as Record<string, unknown>).id;
     if (typeof id !== "number" || !Number.isInteger(id) || id <= 0) {
-      return yield* Effect.fail(
-        new Error(`Invalid installation ID in response for ${input.owner}/${input.repo}.`),
-      );
+      return yield* new GitHubApiError({
+        detail: `Invalid installation ID in response for ${input.owner}/${input.repo}.`,
+      });
     }
     return id;
   });
