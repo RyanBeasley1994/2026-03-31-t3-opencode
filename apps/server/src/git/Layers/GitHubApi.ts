@@ -43,7 +43,7 @@ const makeGitHubApi = Effect.gen(function* () {
         Effect.mapError((cause) => apiError("readPrivateKey", "Failed to check secrets file.", cause)),
       );
       if (!exists) {
-        return yield* apiError("readPrivateKey", "GitHub App private key not configured. Set it in Settings > GitHub App."));
+        return yield* apiError("readPrivateKey", "GitHub App private key not configured. Set it in Settings > GitHub App.");
       }
       const raw = yield* fs.readFileString(secretsPath).pipe(
         Effect.mapError((cause) => apiError("readPrivateKey", "Failed to read secrets file.", cause)),
@@ -51,7 +51,7 @@ const makeGitHubApi = Effect.gen(function* () {
       const parsed = JSON.parse(raw) as { privateKeyPem?: string };
       const pem = parsed.privateKeyPem?.trim() ?? "";
       if (pem.length === 0) {
-        return yield* apiError("readPrivateKey", "GitHub App private key is empty. Set it in Settings > GitHub App."));
+        return yield* apiError("readPrivateKey", "GitHub App private key is empty. Set it in Settings > GitHub App.");
       }
       return pem;
     });
@@ -64,8 +64,7 @@ const makeGitHubApi = Effect.gen(function* () {
       });
       const parsed = parseRepoFromRemoteUrl(result.stdout.trim());
       if (!parsed) {
-        return yield* Effect.fail(
-          apiError("getRepoContext", "Could not parse GitHub owner/repo from origin remote URL."),
+        return yield* apiError("getRepoContext", "Could not parse GitHub owner/repo from origin remote URL."),
         );
       }
       return parsed;
@@ -166,8 +165,7 @@ const makeGitHubApi = Effect.gen(function* () {
       }).pipe(Effect.mapError((cause) => apiError("getPullRequest", cause.message, cause)));
 
       if (!response.ok || !response.json || typeof response.json !== "object") {
-        return yield* Effect.fail(
-          apiError("getPullRequest", `Pull request #${prNumber} not found (status ${response.status}).`),
+        return yield* apiError("getPullRequest", `Pull request #${prNumber} not found (status ${response.status}).`),
         );
       }
 
@@ -212,8 +210,7 @@ const makeGitHubApi = Effect.gen(function* () {
       }).pipe(Effect.mapError((cause) => apiError("getRepositoryCloneUrls", cause.message, cause)));
 
       if (!response.ok || !response.json || typeof response.json !== "object") {
-        return yield* Effect.fail(
-          apiError("getRepositoryCloneUrls", `Repository ${input.repository} not found (status ${response.status}).`),
+        return yield* apiError("getRepositoryCloneUrls", `Repository ${input.repository} not found (status ${response.status}).`),
         );
       }
 
@@ -254,8 +251,7 @@ const makeGitHubApi = Effect.gen(function* () {
           response.json && typeof response.json === "object"
             ? ((response.json as Record<string, unknown>).message as string) ?? ""
             : "";
-        return yield* Effect.fail(
-          apiError(
+        return yield* apiError(
             "createPullRequest",
             `Failed to create pull request (status ${response.status}): ${errorBody}`.trim(),
           ),
@@ -295,8 +291,7 @@ const makeGitHubApi = Effect.gen(function* () {
       }).pipe(Effect.mapError((cause) => apiError("checkoutPullRequest", cause.message, cause)));
 
       if (!prResponse.ok || !prResponse.json || typeof prResponse.json !== "object") {
-        return yield* Effect.fail(
-          apiError("checkoutPullRequest", `Pull request ${input.reference} not found.`),
+        return yield* apiError("checkoutPullRequest", `Pull request ${input.reference} not found.`),
         );
       }
 
