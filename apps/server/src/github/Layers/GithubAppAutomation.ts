@@ -1,4 +1,4 @@
-import { createHmac, createSign, randomUUID, timingSafeEqual } from "node:crypto";
+import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 
 import {
   CommandId,
@@ -23,6 +23,12 @@ import { GithubWebhookDeliveryRepository } from "../../persistence/Services/Gith
 import { GithubWorktreeCleanupJobRepository } from "../../persistence/Services/GithubWorktreeCleanupJobs.ts";
 import { ProviderRegistry } from "../../provider/Services/ProviderRegistry";
 import { ServerSettingsService } from "../../serverSettings";
+import {
+  createAppJwt,
+  getInstallationToken,
+  githubApiRequest,
+  parseRepoFromRemoteUrl,
+} from "../githubApi.ts";
 import {
   GithubAppAutomation,
   GithubAppAutomationError,
@@ -81,22 +87,6 @@ const toPositiveInt = (value: unknown): number | null => {
   return value;
 };
 
-const parseRepoFromRemoteUrl = (url: string | null): ParsedRepo | null => {
-  const trimmed = url?.trim() ?? "";
-  if (trimmed.length === 0) {
-    return null;
-  }
-  const match =
-    /^(?:git@github\.com:|ssh:\/\/git@github\.com\/|https:\/\/github\.com\/|git:\/\/github\.com\/)([^/\s]+)\/([^/\s]+?)(?:\.git)?\/?$/i.exec(
-      trimmed,
-    );
-  const owner = match?.[1]?.trim() ?? "";
-  const name = match?.[2]?.trim() ?? "";
-  if (owner.length === 0 || name.length === 0) {
-    return null;
-  }
-  return { owner, name };
-};
 
 const hasStartTrigger = (commentBody: string, botLogin: string): boolean => {
   const escapedLogin = botLogin.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -297,85 +287,6 @@ const makeGithubAppAutomation = Effect.gen(function* () {
           typeof next.webhookSecret === "string" && next.webhookSecret.trim().length > 0,
       } satisfies GithubAppSecretsStatus;
     }).pipe(Effect.catch(() => getSecretsStatus));
-
-  const createAppJwt = (appId: string, privateKeyPem: string) =>
-    Effect.try({
-      try: () => {
-        const now = Math.floor(Date.now() / 1000);
-        const header = Buffer.from(JSON.stringify({ alg: "RS256", typ: "JWT" })).toString(
-          "base64url",
-        );
-        const payload = Buffer.from(
-          JSON.stringify({
-            iat: now - 60,
-            exp: now + 9 * 60,
-            iss: appId,
-          }),
-        ).toString("base64url");
-        const signingInput = `${header}.${payload}`;
-        const signature = createSign("RSA-SHA256")
-          .update(signingInput)
-          .sign(privateKeyPem, "base64url");
-        return `${signingInput}.${signature}`;
-      },
-      catch: (cause) => githubAppError("createAppJwt", "Failed to create GitHub app JWT.", cause),
-    });
-
-  const githubApiRequest = (input: {
-    method: string;
-    path: string;
-    token: string;
-    body?: unknown;
-  }) =>
-    Effect.tryPromise({
-      try: async () => {
-        const response = await fetch(`https://api.github.com${input.path}`, {
-          method: input.method,
-          headers: {
-            Accept: "application/vnd.github+json",
-            Authorization: `Bearer ${input.token}`,
-            "Content-Type": "application/json",
-            "User-Agent": "t3code-github-app",
-            "X-GitHub-Api-Version": "2022-11-28",
-          },
-          ...(input.body !== undefined ? { body: JSON.stringify(input.body) } : {}),
-        });
-        const text = await response.text();
-        const json = text.length > 0 ? (JSON.parse(text) as unknown) : null;
-        return { status: response.status, ok: response.ok, json };
-      },
-      catch: (cause) => githubAppError("githubApiRequest", "GitHub API request failed.", cause),
-    });
-
-  const getInstallationToken = (input: {
-    appId: string;
-    privateKeyPem: string;
-    installationId: number;
-  }) =>
-    Effect.gen(function* () {
-      const jwt = yield* createAppJwt(input.appId, input.privateKeyPem);
-      const response = yield* githubApiRequest({
-        method: "POST",
-        path: `/app/installations/${input.installationId}/access_tokens`,
-        token: jwt,
-        body: {},
-      });
-      if (!response.ok || !response.json || typeof response.json !== "object") {
-        return yield* Effect.fail(
-          githubAppError(
-            "getInstallationToken",
-            `Installation token request failed with status ${response.status}.`,
-          ),
-        );
-      }
-      const token = toNonEmptyString((response.json as Record<string, unknown>).token);
-      if (!token) {
-        return yield* Effect.fail(
-          githubAppError("getInstallationToken", "Installation token missing in response."),
-        );
-      }
-      return token;
-    });
 
   const postIssueComment = (input: {
     installationToken: string;
@@ -1144,14 +1055,18 @@ const makeGithubAppAutomation = Effect.gen(function* () {
           githubAppError("listRepositories", "GitHub App private key is not configured."),
         );
       }
-      const jwt = yield* createAppJwt(appId, privateKeyPem);
+      const jwt = yield* createAppJwt(appId, privateKeyPem).pipe(
+        Effect.mapError((cause) => githubAppError("listRepositories", "Failed to create JWT.", cause)),
+      );
 
       // List all installations for this app
       const installationsResponse = yield* githubApiRequest({
         method: "GET",
         path: "/app/installations",
         token: jwt,
-      });
+      }).pipe(
+        Effect.mapError((cause) => githubAppError("listRepositories", cause.message, cause)),
+      );
       if (!installationsResponse.ok || !Array.isArray(installationsResponse.json)) {
         return yield* Effect.fail(
           githubAppError(
@@ -1172,7 +1087,9 @@ const makeGithubAppAutomation = Effect.gen(function* () {
           appId,
           privateKeyPem,
           installationId,
-        });
+        }).pipe(
+          Effect.mapError((cause) => githubAppError("listRepositories", cause.message, cause)),
+        );
 
         // Paginate through installation repos
         let page = 1;
@@ -1182,7 +1099,9 @@ const makeGithubAppAutomation = Effect.gen(function* () {
             method: "GET",
             path: `/installation/repositories?per_page=${perPage}&page=${page}`,
             token,
-          });
+          }).pipe(
+            Effect.mapError((cause) => githubAppError("listRepositories", cause.message, cause)),
+          );
           if (!reposResponse.ok || !reposResponse.json || typeof reposResponse.json !== "object") {
             break;
           }

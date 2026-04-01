@@ -36,7 +36,7 @@ import { TerminalManagerLive } from "./terminal/Layers/Manager";
 import { KeybindingsLive } from "./keybindings";
 import { GitManagerLive } from "./git/Layers/GitManager";
 import { GitCoreLive } from "./git/Layers/GitCore";
-import { GitHubCliLive } from "./git/Layers/GitHubCli";
+import { GitHubApiLive } from "./git/Layers/GitHubApi";
 import { RoutingTextGenerationLive } from "./git/Layers/RoutingTextGeneration";
 import { PtyAdapter } from "./terminal/Services/PTY";
 import { AnalyticsService } from "./telemetry/Services/AnalyticsService";
@@ -147,14 +147,14 @@ export function makeServerRuntimeServicesLayer() {
 
   const gitManagerLayer = GitManagerLive.pipe(
     Layer.provideMerge(GitCoreLive),
-    Layer.provideMerge(GitHubCliLive),
+    Layer.provideMerge(GitHubApiLive),
     Layer.provideMerge(textGenerationLayer),
   );
 
   const baseRuntimeLayer = Layer.mergeAll(
     orchestrationReactorLayer,
     GitCoreLive,
-    GitHubCliLive,
+    GitHubApiLive,
     gitManagerLayer,
     terminalLayer,
     KeybindingsLive,
