@@ -10,6 +10,7 @@ import { Effect, FileSystem, Layer, Path } from "effect";
 
 import { ServerConfig } from "../../config.ts";
 import {
+  buildPushCredentialEnv,
   getInstallationIdForRepo,
   getInstallationToken,
   githubApiRequest,
@@ -351,6 +352,9 @@ const makeGitHubApi = Effect.gen(function* () {
       });
     });
 
+  const getPushCredentialEnv: GitHubCliShape["getPushCredentialEnv"] = (input) =>
+    getToken(input.cwd).pipe(Effect.map(({ token }) => buildPushCredentialEnv(token)));
+
   return {
     execute,
     listOpenPullRequests,
@@ -359,6 +363,7 @@ const makeGitHubApi = Effect.gen(function* () {
     createPullRequest,
     getDefaultBranch,
     checkoutPullRequest,
+    getPushCredentialEnv,
   } satisfies GitHubCliShape;
 });
 

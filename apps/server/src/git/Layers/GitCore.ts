@@ -61,6 +61,7 @@ interface ExecuteGitOptions {
   maxOutputBytes?: number | undefined;
   truncateOutputAtMaxBytes?: boolean | undefined;
   progress?: ExecuteGitProgress | undefined;
+  env?: Record<string, string> | undefined;
 }
 
 function parseBranchAb(value: string): { ahead: number; behind: number } {
@@ -630,6 +631,7 @@ export const makeGitCore = Effect.fn("makeGitCore")(function* (options?: {
         ? { truncateOutputAtMaxBytes: options.truncateOutputAtMaxBytes }
         : {}),
       ...(options.progress ? { progress: options.progress } : {}),
+      ...(options.env ? { env: options.env } : {}),
     }).pipe(
       Effect.flatMap((result) => {
         if (options.allowNonZeroExit || result.code === 0) {
@@ -660,8 +662,11 @@ export const makeGitCore = Effect.fn("makeGitCore")(function* (options?: {
     cwd: string,
     args: readonly string[],
     allowNonZeroExit = false,
+    env?: Record<string, string>,
   ): Effect.Effect<void, GitCommandError> =>
-    executeGit(operation, cwd, args, { allowNonZeroExit }).pipe(Effect.asVoid);
+    executeGit(operation, cwd, args, { allowNonZeroExit, ...(env ? { env } : {}) }).pipe(
+      Effect.asVoid,
+    );
 
   const runGitStdout = (
     operation: string,
@@ -1221,7 +1226,8 @@ export const makeGitCore = Effect.fn("makeGitCore")(function* (options?: {
   });
 
   const pushCurrentBranch: GitCoreShape["pushCurrentBranch"] = Effect.fn("pushCurrentBranch")(
-    function* (cwd, fallbackBranch) {
+    function* (cwd, fallbackBranch, options) {
+      const pushEnv = options?.env;
       const details = yield* statusDetails(cwd);
       const branch = details.branch ?? fallbackBranch;
       if (!branch) {
@@ -1279,12 +1285,13 @@ export const makeGitCore = Effect.fn("makeGitCore")(function* (options?: {
             "Cannot push because no git remote is configured for this repository.",
           );
         }
-        yield* runGit("GitCore.pushCurrentBranch.pushWithUpstream", cwd, [
-          "push",
-          "-u",
-          publishRemoteName,
-          branch,
-        ]);
+        yield* runGit(
+          "GitCore.pushCurrentBranch.pushWithUpstream",
+          cwd,
+          ["push", "-u", publishRemoteName, branch],
+          false,
+          pushEnv,
+        );
         return {
           status: "pushed" as const,
           branch,
@@ -1297,11 +1304,13 @@ export const makeGitCore = Effect.fn("makeGitCore")(function* (options?: {
         Effect.catch(() => Effect.succeed(null)),
       );
       if (currentUpstream) {
-        yield* runGit("GitCore.pushCurrentBranch.pushUpstream", cwd, [
-          "push",
-          currentUpstream.remoteName,
-          `HEAD:${currentUpstream.upstreamBranch}`,
-        ]);
+        yield* runGit(
+          "GitCore.pushCurrentBranch.pushUpstream",
+          cwd,
+          ["push", currentUpstream.remoteName, `HEAD:${currentUpstream.upstreamBranch}`],
+          false,
+          pushEnv,
+        );
         return {
           status: "pushed" as const,
           branch,
@@ -1310,7 +1319,7 @@ export const makeGitCore = Effect.fn("makeGitCore")(function* (options?: {
         };
       }
 
-      yield* runGit("GitCore.pushCurrentBranch.push", cwd, ["push"]);
+      yield* runGit("GitCore.pushCurrentBranch.push", cwd, ["push"], false, pushEnv);
       return {
         status: "pushed" as const,
         branch,

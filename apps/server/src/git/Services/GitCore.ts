@@ -172,6 +172,7 @@ export interface GitCoreShape {
   readonly pushCurrentBranch: (
     cwd: string,
     fallbackBranch: string | null,
+    options?: { env?: Record<string, string> },
   ) => Effect.Effect<GitPushResult, GitCommandError>;
 
   /**

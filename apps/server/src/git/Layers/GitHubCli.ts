@@ -287,6 +287,7 @@ const makeGitHubCli = Effect.sync(() => {
         cwd: input.cwd,
         args: ["pr", "checkout", input.reference, ...(input.force ? ["--force"] : [])],
       }).pipe(Effect.asVoid),
+    getPushCredentialEnv: () => Effect.succeed({}),
   } satisfies GitHubCliShape;
 
   return service;

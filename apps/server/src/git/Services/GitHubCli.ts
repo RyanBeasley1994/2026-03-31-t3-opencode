@@ -93,6 +93,14 @@ export interface GitHubCliShape {
     readonly reference: string;
     readonly force?: boolean;
   }) => Effect.Effect<void, GitHubCliError>;
+
+  /**
+   * Get env vars to inject GitHub credentials for git push.
+   * Returns empty object when credentials are handled externally (e.g. SSH, gh CLI).
+   */
+  readonly getPushCredentialEnv: (input: {
+    readonly cwd: string;
+  }) => Effect.Effect<Record<string, string>, GitHubCliError>;
 }
 
 /**

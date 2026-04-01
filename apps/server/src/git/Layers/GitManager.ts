@@ -1258,7 +1258,16 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
               })
               .pipe(
                 Effect.tap(() => Ref.set(currentPhase, Option.some("push"))),
-                Effect.flatMap(() => gitCore.pushCurrentBranch(input.cwd, currentBranch)),
+                Effect.flatMap(() =>
+                  gitHubCli.getPushCredentialEnv({ cwd: input.cwd }).pipe(
+                    Effect.catch(() => Effect.succeed({})),
+                    Effect.flatMap((credEnv) => {
+                      const pushOpts =
+                        Object.keys(credEnv).length > 0 ? { env: credEnv } : undefined;
+                      return gitCore.pushCurrentBranch(input.cwd, currentBranch, pushOpts);
+                    }),
+                  ),
+                ),
               )
           : { status: "skipped_not_requested" as const };
 

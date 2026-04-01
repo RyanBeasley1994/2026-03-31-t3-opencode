@@ -159,3 +159,17 @@ export const parseRepoFromRemoteUrl = (
   }
   return { owner, name };
 };
+
+// ── Push credential env ──────────────────────────────────────────────
+
+/**
+ * Build env vars that inject a GitHub App installation token as HTTPS
+ * credentials for `git push`.  Uses `url.<base>.insteadOf` to rewrite
+ * `https://github.com/` URLs to include the token.
+ */
+export const buildPushCredentialEnv = (token: string): Record<string, string> => ({
+  GIT_CONFIG_COUNT: "1",
+  GIT_CONFIG_KEY_0: `url.https://x-access-token:${token}@github.com/.insteadOf`,
+  GIT_CONFIG_VALUE_0: "https://github.com/",
+  GIT_TERMINAL_PROMPT: "0",
+});

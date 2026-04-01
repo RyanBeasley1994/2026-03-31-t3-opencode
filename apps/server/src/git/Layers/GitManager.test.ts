@@ -464,6 +464,7 @@ function createGitHubCliWithFakeGh(scenario: FakeGhScenario = {}): {
           cwd: input.cwd,
           args: ["pr", "checkout", input.reference, ...(input.force ? ["--force"] : [])],
         }).pipe(Effect.asVoid),
+      getPushCredentialEnv: () => Effect.succeed({}),
     },
     ghCalls,
   };
