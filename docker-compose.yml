@@ -1,0 +1,36 @@
+services:
+  nginx:
+    image: nginx:alpine
+    container_name: t3-nginx
+    depends_on:
+      - server
+      - webui
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - /etc/ssl/klive:/etc/ssl/klive:ro
+    restart: unless-stopped
+
+  server:
+    image: ${SERVER_IMAGE:-ryandj3/t3-server:latest}
+    build:
+      context: .
+      dockerfile: docker/server.Dockerfile
+    environment:
+      T3CODE_HOME: /app/.t3code
+      T3CODE_MODE: web
+      T3CODE_NO_BROWSER: "1"
+    restart: unless-stopped
+
+  webui:
+    image: ${WEBUI_IMAGE:-ryandj3/t3-webui:latest}
+    build:
+      context: .
+      dockerfile: docker/webui.Dockerfile
+    environment:
+      VITE_WS_URL: wss://aicoder.propriotec.app/ws
+    depends_on:
+      - server
+    restart: unless-stopped
