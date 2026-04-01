@@ -13,6 +13,7 @@ interface PendingUserInputPanelProps {
   respondingRequestIds: ApprovalRequestId[];
   answers: Record<string, PendingUserInputDraftAnswer>;
   questionIndex: number;
+  errorMessage?: string | null;
   onSelectOption: (questionId: string, optionLabel: string) => void;
   onAdvance: () => void;
 }
@@ -22,6 +23,7 @@ export const ComposerPendingUserInputPanel = memo(function ComposerPendingUserIn
   respondingRequestIds,
   answers,
   questionIndex,
+  errorMessage,
   onSelectOption,
   onAdvance,
 }: PendingUserInputPanelProps) {
@@ -36,6 +38,7 @@ export const ComposerPendingUserInputPanel = memo(function ComposerPendingUserIn
       isResponding={respondingRequestIds.includes(activePrompt.requestId)}
       answers={answers}
       questionIndex={questionIndex}
+      errorMessage={errorMessage ?? null}
       onSelectOption={onSelectOption}
       onAdvance={onAdvance}
     />
@@ -47,6 +50,7 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
   isResponding,
   answers,
   questionIndex,
+  errorMessage,
   onSelectOption,
   onAdvance,
 }: {
@@ -54,6 +58,7 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
   isResponding: boolean;
   answers: Record<string, PendingUserInputDraftAnswer>;
   questionIndex: number;
+  errorMessage: string | null;
   onSelectOption: (questionId: string, optionLabel: string) => void;
   onAdvance: () => void;
 }) {
@@ -146,6 +151,7 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
           </span>
         </div>
       </div>
+      {errorMessage ? <p className="mt-2 text-xs text-destructive">{errorMessage}</p> : null}
       <p className="mt-1.5 text-sm text-foreground/90">{activeQuestion.question}</p>
       <div className="mt-3 space-y-1">
         {activeQuestion.options.map((option, index) => {

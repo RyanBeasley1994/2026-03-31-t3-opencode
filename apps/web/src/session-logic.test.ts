@@ -16,6 +16,7 @@ import {
   deriveActivePlanState,
   PROVIDER_OPTIONS,
   derivePendingApprovals,
+  deriveProviderUserInputRespondFailures,
   derivePendingUserInputs,
   deriveTimelineEntries,
   deriveWorkLogEntries,
@@ -224,6 +225,36 @@ describe("derivePendingApprovals", () => {
 
     expect(derivePendingApprovals(activities)).toEqual([]);
   });
+
+  it("clears stale pending approvals when failureClass metadata is present", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "approval-open-stale-class",
+        createdAt: "2026-02-23T00:00:01.000Z",
+        kind: "approval.requested",
+        summary: "Command approval requested",
+        tone: "approval",
+        payload: {
+          requestId: "req-stale-class-1",
+          requestKind: "command",
+        },
+      }),
+      makeActivity({
+        id: "approval-failed-stale-class",
+        createdAt: "2026-02-23T00:00:02.000Z",
+        kind: "provider.approval.respond.failed",
+        summary: "Provider approval response failed",
+        tone: "error",
+        payload: {
+          requestId: "req-stale-class-1",
+          detail: "Expired provider callback state",
+          failureClass: "stale_pending_request",
+        },
+      }),
+    ];
+
+    expect(derivePendingApprovals(activities)).toEqual([]);
+  });
 });
 
 describe("derivePendingUserInputs", () => {
@@ -353,6 +384,48 @@ describe("derivePendingUserInputs", () => {
     expect(derivePendingUserInputs(activities)).toEqual([]);
   });
 
+  it("clears stale pending user-input prompts when payload exposes failureClass", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "user-input-open-stale-class",
+        createdAt: "2026-02-23T00:00:01.000Z",
+        kind: "user-input.requested",
+        summary: "User input requested",
+        tone: "info",
+        payload: {
+          requestId: "req-user-input-stale-class-1",
+          questions: [
+            {
+              id: "sandbox_mode",
+              header: "Sandbox",
+              question: "Which mode should be used?",
+              options: [
+                {
+                  label: "workspace-write",
+                  description: "Allow workspace writes only",
+                },
+              ],
+            },
+          ],
+        },
+      }),
+      makeActivity({
+        id: "user-input-failed-stale-class",
+        createdAt: "2026-02-23T00:00:02.000Z",
+        kind: "provider.user-input.respond.failed",
+        summary: "Provider user input response failed",
+        tone: "error",
+        payload: {
+          requestId: "req-user-input-stale-class-1",
+          detail: "Provider callback state expired",
+          failureClass: "stale_pending_request",
+        },
+      }),
+    ];
+
+    expect(derivePendingUserInputs(activities)).toEqual([]);
+  });
+
   it("preserves multiple/custom metadata and accepts custom-only questions", () => {
     const activities: OrchestrationThreadActivity[] = [
       makeActivity({
@@ -467,6 +540,61 @@ describe("derivePendingUserInputs", () => {
             custom: false,
           },
         ],
+      },
+    ]);
+  });
+});
+
+describe("deriveProviderUserInputRespondFailures", () => {
+  it("classifies stale failures from payload metadata and keeps request id", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "user-input-failure-metadata",
+        createdAt: "2026-02-23T00:00:02.000Z",
+        kind: "provider.user-input.respond.failed",
+        summary: "Provider user input response failed",
+        tone: "error",
+        payload: {
+          requestId: "req-user-input-1",
+          detail: "Stale pending user-input request: req-user-input-1",
+          failureClass: "stale_pending_request",
+        },
+      }),
+    ];
+
+    expect(deriveProviderUserInputRespondFailures(activities)).toEqual([
+      {
+        activityId: "user-input-failure-metadata",
+        requestId: "req-user-input-1",
+        createdAt: "2026-02-23T00:00:02.000Z",
+        detail: "Stale pending user-input request: req-user-input-1",
+        failureClass: "stale_pending_request",
+      },
+    ]);
+  });
+
+  it("falls back to provider_error when no stale marker is present", () => {
+    const activities: OrchestrationThreadActivity[] = [
+      makeActivity({
+        id: "user-input-failure-generic",
+        createdAt: "2026-02-23T00:00:02.000Z",
+        kind: "provider.user-input.respond.failed",
+        summary: "Provider user input response failed",
+        tone: "error",
+        payload: {
+          requestId: "req-user-input-2",
+          detail: "Network timeout while replying to question",
+        },
+      }),
+    ];
+
+    expect(deriveProviderUserInputRespondFailures(activities)).toEqual([
+      {
+        activityId: "user-input-failure-generic",
+        requestId: "req-user-input-2",
+        createdAt: "2026-02-23T00:00:02.000Z",
+        detail: "Network timeout while replying to question",
+        failureClass: "provider_error",
       },
     ]);
   });

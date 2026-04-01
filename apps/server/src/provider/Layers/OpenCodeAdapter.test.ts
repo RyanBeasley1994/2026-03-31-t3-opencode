@@ -68,11 +68,15 @@ class FakeOpenCodeClient {
   readonly abortCalls: Array<unknown> = [];
   readonly forkCalls: Array<unknown> = [];
   readonly permissionReplyCalls: Array<unknown> = [];
+  readonly permissionListCalls: Array<unknown> = [];
   readonly questionReplyCalls: Array<unknown> = [];
+  readonly questionListCalls: Array<unknown> = [];
 
   readonly eventStream = new AsyncEventStream<any>();
   readonly messagesBySession = new Map<string, Array<any>>();
   readonly messageDetails = new Map<string, { parts: Array<any> }>();
+  readonly permissionRequests: Array<any> = [];
+  readonly questionRequests: Array<any> = [];
 
   private readonly subscribed = Promise.withResolvers<void>();
   private createdSessionCount = 0;
@@ -133,12 +137,20 @@ class FakeOpenCodeClient {
       this.permissionReplyCalls.push(input);
       return {} as const;
     },
+    list: async (input: unknown) => {
+      this.permissionListCalls.push(input);
+      return { data: this.permissionRequests } as const;
+    },
   };
 
   question = {
     reply: async (input: unknown) => {
       this.questionReplyCalls.push(input);
       return {} as const;
+    },
+    list: async (input: unknown) => {
+      this.questionListCalls.push(input);
+      return { data: this.questionRequests } as const;
     },
   };
 
@@ -254,6 +266,60 @@ describe("OpenCodeAdapterLive", () => {
       }
     }).pipe(Effect.provide(makeLayer(harness)));
   });
+
+  it.effect(
+    "hydrates pending permissions and questions when recovering an existing session",
+    () => {
+      const harness = new OpenCodeAdapterHarness();
+      return Effect.gen(function* () {
+        harness.client.messagesBySession.set("sess-resumed-pending", []);
+        harness.client.permissionRequests.push({
+          id: "perm-resume-1",
+          sessionID: "sess-resumed-pending",
+          permission: "bash",
+          patterns: ["git status"],
+          metadata: {},
+          always: [],
+        });
+        harness.client.questionRequests.push({
+          id: "question-resume-1",
+          sessionID: "sess-resumed-pending",
+          questions: [
+            {
+              header: "scope",
+              question: "What scope should I use?",
+              options: [{ label: "repo", description: "Repository root" }],
+            },
+          ],
+        });
+        const adapter = yield* OpenCodeAdapter;
+
+        yield* adapter.startSession({
+          provider: "opencode",
+          threadId: asThreadId("thread-resume-pending"),
+          cwd: "/repo",
+          resumeCursor: { sessionId: "sess-resumed-pending" },
+          runtimeMode: "full-access",
+        });
+        yield* Effect.promise(() => harness.client.waitForSubscription());
+        const startupEvents = yield* collectRuntimeEvents(adapter, 5);
+
+        assert.equal(harness.client.permissionListCalls.length, 1);
+        assert.equal(harness.client.questionListCalls.length, 1);
+        assert.equal(startupEvents[0]?.type, "session.started");
+        assert.equal(startupEvents[1]?.type, "thread.started");
+        assert.equal(startupEvents[2]?.type, "session.state.changed");
+        assert.equal(startupEvents[3]?.type, "request.opened");
+        assert.equal(startupEvents[4]?.type, "user-input.requested");
+        if (startupEvents[3]?.type === "request.opened") {
+          assert.equal(startupEvents[3].requestId, "perm-resume-1");
+        }
+        if (startupEvents[4]?.type === "user-input.requested") {
+          assert.equal(startupEvents[4].requestId, "question-resume-1");
+        }
+      }).pipe(Effect.provide(makeLayer(harness)));
+    },
+  );
 
   it.effect(
     "uses the configured OpenCode binary path when no per-session override is provided",
@@ -1098,6 +1164,185 @@ describe("OpenCodeAdapterLive", () => {
       assert.deepEqual(harness.client.questionReplyCalls[0], {
         requestID: "question-1",
         answers: [["repo"], ["fast", "careful"]],
+      });
+    }).pipe(Effect.provide(makeLayer(harness)));
+  });
+
+  it.effect("recovers missing local question state from question.list before replying", () => {
+    const harness = new OpenCodeAdapterHarness();
+    return Effect.gen(function* () {
+      harness.client.messagesBySession.set("sess-created-1", []);
+      harness.client.questionRequests.push({
+        id: "question-recover-1",
+        sessionID: "sess-created-1",
+        questions: [
+          {
+            header: "scope",
+            question: "What scope should I use?",
+            options: [{ label: "repo", description: "Repository root" }],
+          },
+          {
+            header: "scope",
+            question: "What scope should I avoid?",
+            options: [{ label: "none", description: "No exclusions" }],
+          },
+        ],
+        tool: {
+          messageID: "msg-recover-1",
+          callID: "call-recover-1",
+        },
+      });
+      const adapter = yield* OpenCodeAdapter;
+
+      yield* adapter.startSession({
+        provider: "opencode",
+        threadId: asThreadId("thread-question-recover"),
+        cwd: "/repo",
+        runtimeMode: "full-access",
+      });
+      yield* Effect.promise(() => harness.client.waitForSubscription());
+      yield* drainRuntimeEvents(adapter, 3);
+
+      yield* adapter.respondToUserInput(
+        asThreadId("thread-question-recover"),
+        ApprovalRequestId.makeUnsafe("question-recover-1"),
+        {
+          "scope#1": "repo",
+          "scope#2": "none",
+        },
+      );
+      const [resolved] = yield* collectRuntimeEvents(adapter, 1);
+
+      assert.equal(harness.client.questionListCalls.length, 1);
+      assert.deepEqual(harness.client.questionReplyCalls[0], {
+        requestID: "question-recover-1",
+        answers: [["repo"], ["none"]],
+      });
+      assert.equal(resolved?.type, "user-input.resolved");
+      if (resolved?.type === "user-input.resolved") {
+        assert.equal(resolved.requestId, "question-recover-1");
+        assert.equal(resolved.turnId, "opencode:msg-recover-1");
+      }
+    }).pipe(Effect.provide(makeLayer(harness)));
+  });
+
+  it.effect("emits user-input.resolved immediately after question.reply succeeds", () => {
+    const harness = new OpenCodeAdapterHarness();
+    return Effect.gen(function* () {
+      harness.client.messagesBySession.set("sess-created-1", []);
+      const adapter = yield* OpenCodeAdapter;
+
+      yield* adapter.startSession({
+        provider: "opencode",
+        threadId: asThreadId("thread-question-immediate-resolve"),
+        cwd: "/repo",
+        runtimeMode: "full-access",
+      });
+      yield* Effect.promise(() => harness.client.waitForSubscription());
+      yield* drainRuntimeEvents(adapter, 3);
+
+      yield* adapter.sendTurn({
+        threadId: asThreadId("thread-question-immediate-resolve"),
+        input: "Need input now",
+        attachments: [],
+      });
+      yield* drainRuntimeEvents(adapter, 1);
+
+      harness.client.pushEvent({
+        type: "question.asked",
+        properties: {
+          sessionID: "sess-created-1",
+          id: "question-immediate-1",
+          questions: [
+            {
+              header: "scope",
+              question: "What scope should I use?",
+              options: [{ label: "repo", description: "Repository root" }],
+            },
+          ],
+        },
+      });
+      yield* collectRuntimeEvents(adapter, 1);
+
+      yield* adapter.respondToUserInput(
+        asThreadId("thread-question-immediate-resolve"),
+        ApprovalRequestId.makeUnsafe("question-immediate-1"),
+        {
+          scope: "repo",
+        },
+      );
+      const [resolved] = yield* collectRuntimeEvents(adapter, 1);
+
+      assert.equal(resolved?.type, "user-input.resolved");
+      if (resolved?.type === "user-input.resolved") {
+        assert.equal(resolved.requestId, "question-immediate-1");
+        assert.deepEqual(resolved.payload.answers, { scope: "repo" });
+      }
+    }).pipe(Effect.provide(makeLayer(harness)));
+  });
+
+  it.effect("assigns deterministic IDs to duplicate question headers", () => {
+    const harness = new OpenCodeAdapterHarness();
+    return Effect.gen(function* () {
+      harness.client.messagesBySession.set("sess-created-1", []);
+      const adapter = yield* OpenCodeAdapter;
+
+      yield* adapter.startSession({
+        provider: "opencode",
+        threadId: asThreadId("thread-question-duplicate-headers"),
+        cwd: "/repo",
+        runtimeMode: "full-access",
+      });
+      yield* Effect.promise(() => harness.client.waitForSubscription());
+      yield* drainRuntimeEvents(adapter, 3);
+
+      yield* adapter.sendTurn({
+        threadId: asThreadId("thread-question-duplicate-headers"),
+        input: "Need duplicate headers",
+        attachments: [],
+      });
+      yield* drainRuntimeEvents(adapter, 1);
+
+      harness.client.pushEvent({
+        type: "question.asked",
+        properties: {
+          sessionID: "sess-created-1",
+          id: "question-duplicate-headers-1",
+          questions: [
+            {
+              header: "scope",
+              question: "Primary scope?",
+              options: [{ label: "repo", description: "Repository root" }],
+            },
+            {
+              header: "scope",
+              question: "Secondary scope?",
+              options: [{ label: "file", description: "Single file" }],
+            },
+          ],
+        },
+      });
+      const [requested] = yield* collectRuntimeEvents(adapter, 1);
+
+      assert.equal(requested?.type, "user-input.requested");
+      if (requested?.type === "user-input.requested") {
+        assert.deepEqual(
+          requested.payload.questions.map((question) => question.id),
+          ["scope#1", "scope#2"],
+        );
+      }
+
+      yield* adapter.respondToUserInput(
+        asThreadId("thread-question-duplicate-headers"),
+        ApprovalRequestId.makeUnsafe("question-duplicate-headers-1"),
+        {
+          "scope#1": "repo",
+          "scope#2": "file",
+        },
+      );
+      assert.deepEqual(harness.client.questionReplyCalls[0], {
+        requestID: "question-duplicate-headers-1",
+        answers: [["repo"], ["file"]],
       });
     }).pipe(Effect.provide(makeLayer(harness)));
   });

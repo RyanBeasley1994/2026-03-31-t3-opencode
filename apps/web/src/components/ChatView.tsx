@@ -43,6 +43,7 @@ import {
 } from "../composer-logic";
 import {
   derivePendingApprovals,
+  deriveProviderUserInputRespondFailures,
   derivePendingUserInputs,
   derivePhase,
   deriveTimelineEntries,
@@ -353,6 +354,9 @@ export default function ChatView({ threadId }: ChatViewProps) {
   >({});
   const [pendingUserInputQuestionIndexByRequestId, setPendingUserInputQuestionIndexByRequestId] =
     useState<Record<string, number>>({});
+  const [dismissedUserInputRespondFailureIds, setDismissedUserInputRespondFailureIds] = useState<
+    Record<string, true>
+  >({});
   const [expandedWorkGroups, setExpandedWorkGroups] = useState<Record<string, boolean>>({});
   const [planSidebarOpen, setPlanSidebarOpen] = useState(false);
   const [isComposerFooterCompact, setIsComposerFooterCompact] = useState(false);
@@ -408,6 +412,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
   const sendInFlightRef = useRef(false);
   const dragDepthRef = useRef(0);
   const terminalOpenByThreadRef = useRef<Record<string, boolean>>({});
+  const notifiedUserInputRespondFailureIdsRef = useRef<Set<string>>(new Set());
   const setMessagesScrollContainerRef = useCallback((element: HTMLDivElement | null) => {
     messagesScrollRef.current = element;
     setMessagesScrollElement(element);
@@ -700,10 +705,32 @@ export default function ChatView({ threadId }: ChatViewProps) {
     () => derivePendingUserInputs(threadActivities),
     [threadActivities],
   );
+  const providerUserInputRespondFailures = useMemo(
+    () => deriveProviderUserInputRespondFailures(threadActivities),
+    [threadActivities],
+  );
   const retryableUserInputRespondFailedRequestIds = useMemo(
     () => collectRetryableUserInputRespondFailedRequestIds(threadActivities),
     [threadActivities],
   );
+  useEffect(() => {
+    for (const failure of providerUserInputRespondFailures) {
+      if (notifiedUserInputRespondFailureIdsRef.current.has(failure.activityId)) {
+        continue;
+      }
+      notifiedUserInputRespondFailureIdsRef.current.add(failure.activityId);
+      const isStaleFailure = failure.failureClass === "stale_pending_request";
+      toastManager.add({
+        type: "error",
+        title: isStaleFailure ? "Pending request expired" : "Failed to submit user input",
+        description:
+          failure.detail ??
+          (isStaleFailure
+            ? "The pending request is no longer valid. Start a new turn to continue."
+            : "Provider user input response failed."),
+      });
+    }
+  }, [providerUserInputRespondFailures]);
   useEffect(() => {
     setRespondingUserInputRequestIds((existing) => {
       const next = reconcileRespondingUserInputRequestIds(
@@ -716,7 +743,24 @@ export default function ChatView({ threadId }: ChatViewProps) {
         : next;
     });
   }, [pendingUserInputs, retryableUserInputRespondFailedRequestIds]);
+  const latestVisibleUserInputRespondFailure = useMemo(
+    () =>
+      [...providerUserInputRespondFailures]
+        .toReversed()
+        .find((failure) => !dismissedUserInputRespondFailureIds[failure.activityId]) ?? null,
+    [dismissedUserInputRespondFailureIds, providerUserInputRespondFailures],
+  );
   const activePendingUserInput = pendingUserInputs[0] ?? null;
+  const activePendingUserInputRespondFailure = useMemo(() => {
+    if (!activePendingUserInput) {
+      return null;
+    }
+    return (
+      [...providerUserInputRespondFailures]
+        .toReversed()
+        .find((failure) => failure.requestId === activePendingUserInput.requestId) ?? null
+    );
+  }, [activePendingUserInput, providerUserInputRespondFailures]);
   const activePendingDraftAnswers = useMemo(
     () =>
       activePendingUserInput
@@ -758,6 +802,13 @@ export default function ChatView({ threadId }: ChatViewProps) {
   const activePendingIsResponding = activePendingUserInput
     ? respondingUserInputRequestIds.includes(activePendingUserInput.requestId)
     : false;
+  const userInputFailureBannerMessage = latestVisibleUserInputRespondFailure
+    ? (latestVisibleUserInputRespondFailure.detail ??
+      (latestVisibleUserInputRespondFailure.failureClass === "stale_pending_request"
+        ? "The pending user-input request expired. Start a new turn to continue."
+        : "Provider user input response failed."))
+    : null;
+  const threadErrorBannerMessage = activeThread?.error ?? userInputFailureBannerMessage;
   const activeProposedPlan = useMemo(() => {
     if (!latestTurnSettled) {
       return null;
@@ -3744,8 +3795,21 @@ export default function ChatView({ threadId }: ChatViewProps) {
       {/* Error banner */}
       <ProviderStatusBanner status={activeProviderStatus} />
       <ThreadErrorBanner
-        error={activeThread.error}
-        onDismiss={() => setThreadError(activeThread.id, null)}
+        error={threadErrorBannerMessage}
+        onDismiss={() => {
+          if (activeThread.error) {
+            setThreadError(activeThread.id, null);
+            return;
+          }
+          const failure = latestVisibleUserInputRespondFailure;
+          if (!failure) {
+            return;
+          }
+          setDismissedUserInputRespondFailureIds((existing) => ({
+            ...existing,
+            [failure.activityId]: true,
+          }));
+        }}
       />
       {/* Main content area with optional plan sidebar */}
       <div className="flex min-h-0 min-w-0 flex-1">
@@ -3848,6 +3912,15 @@ export default function ChatView({ threadId }: ChatViewProps) {
                         respondingRequestIds={respondingUserInputRequestIds}
                         answers={activePendingDraftAnswers}
                         questionIndex={activePendingQuestionIndex}
+                        errorMessage={
+                          activePendingUserInputRespondFailure
+                            ? (activePendingUserInputRespondFailure.detail ??
+                              (activePendingUserInputRespondFailure.failureClass ===
+                              "stale_pending_request"
+                                ? "The pending user-input request expired. Start a new turn to continue."
+                                : "Provider user input response failed."))
+                            : null
+                        }
                         onSelectOption={onSelectActivePendingUserInputOption}
                         onAdvance={onAdvanceActivePendingUserInput}
                       />

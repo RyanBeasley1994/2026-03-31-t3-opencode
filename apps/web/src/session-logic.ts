@@ -63,6 +63,16 @@ export interface PendingUserInput {
   questions: ReadonlyArray<UserInputQuestion>;
 }
 
+export type ProviderFailureClass = "provider_error" | "stale_pending_request";
+
+export interface ProviderUserInputRespondFailure {
+  activityId: string;
+  requestId: ApprovalRequestId | null;
+  createdAt: string;
+  detail?: string;
+  failureClass: ProviderFailureClass;
+}
+
 export interface ActivePlanState {
   createdAt: string;
   turnId: TurnId | null;
@@ -179,6 +189,26 @@ function isStalePendingRequestFailureDetail(detail: string | undefined): boolean
   );
 }
 
+function deriveProviderFailureClass(
+  payload: Record<string, unknown> | null,
+): ProviderFailureClass | null {
+  if (payload?.failureClass === "stale_pending_request") {
+    return "stale_pending_request";
+  }
+  if (payload?.failureClass === "provider_error") {
+    return "provider_error";
+  }
+
+  const detail = typeof payload?.detail === "string" ? payload.detail : undefined;
+  if (isStalePendingRequestFailureDetail(detail)) {
+    return "stale_pending_request";
+  }
+  if (detail) {
+    return "provider_error";
+  }
+  return null;
+}
+
 export function derivePendingApprovals(
   activities: ReadonlyArray<OrchestrationThreadActivity>,
 ): PendingApproval[] {
@@ -204,6 +234,7 @@ export function derivePendingApprovals(
           ? requestKindFromRequestType(payload.requestType)
           : null;
     const detail = payload && typeof payload.detail === "string" ? payload.detail : undefined;
+    const failureClass = deriveProviderFailureClass(payload);
 
     if (activity.kind === "approval.requested" && requestId && requestKind) {
       openByRequestId.set(requestId, {
@@ -223,7 +254,7 @@ export function derivePendingApprovals(
     if (
       activity.kind === "provider.approval.respond.failed" &&
       requestId &&
-      isStalePendingRequestFailureDetail(detail)
+      failureClass === "stale_pending_request"
     ) {
       openByRequestId.delete(requestId);
       continue;
@@ -334,7 +365,7 @@ export function derivePendingUserInputs(
       payload && typeof payload.requestId === "string"
         ? ApprovalRequestId.makeUnsafe(payload.requestId)
         : null;
-    const detail = payload && typeof payload.detail === "string" ? payload.detail : undefined;
+    const failureClass = deriveProviderFailureClass(payload);
 
     if (activity.kind === "user-input.requested" && requestId) {
       const questions = parseUserInputQuestions(payload);
@@ -357,7 +388,7 @@ export function derivePendingUserInputs(
     if (
       activity.kind === "provider.user-input.respond.failed" &&
       requestId &&
-      isStalePendingRequestFailureDetail(detail)
+      failureClass === "stale_pending_request"
     ) {
       openByRequestId.delete(requestId);
     }
@@ -366,6 +397,35 @@ export function derivePendingUserInputs(
   return [...openByRequestId.values()].toSorted((left, right) =>
     left.createdAt.localeCompare(right.createdAt),
   );
+}
+
+export function deriveProviderUserInputRespondFailures(
+  activities: ReadonlyArray<OrchestrationThreadActivity>,
+): ProviderUserInputRespondFailure[] {
+  return [...activities].toSorted(compareActivitiesByOrder).flatMap((activity) => {
+    if (activity.kind !== "provider.user-input.respond.failed") {
+      return [];
+    }
+    const payload =
+      activity.payload && typeof activity.payload === "object"
+        ? (activity.payload as Record<string, unknown>)
+        : null;
+    const requestId =
+      payload && typeof payload.requestId === "string"
+        ? ApprovalRequestId.makeUnsafe(payload.requestId)
+        : null;
+    const detail = payload && typeof payload.detail === "string" ? payload.detail : undefined;
+    const failureClass = deriveProviderFailureClass(payload) ?? "provider_error";
+    return [
+      {
+        activityId: activity.id,
+        requestId,
+        createdAt: activity.createdAt,
+        ...(detail ? { detail } : {}),
+        failureClass,
+      } satisfies ProviderUserInputRespondFailure,
+    ];
+  });
 }
 
 export function deriveActivePlanState(

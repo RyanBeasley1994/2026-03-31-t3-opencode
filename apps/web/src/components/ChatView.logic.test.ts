@@ -1,4 +1,4 @@
-import { ApprovalRequestId, ThreadId } from "@t3tools/contracts";
+import { ApprovalRequestId, EventId, ThreadId } from "@t3tools/contracts";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -7,6 +7,7 @@ import {
   buildNextProviderModelSelection,
   buildExpiredTerminalContextToastCopy,
   canAdvancePendingUserInput,
+  collectRetryableUserInputRespondFailedRequestIds,
   derivePendingComposerPromptState,
   deriveComposerSendState,
   derivePendingPromptOwnershipTransition,
@@ -15,6 +16,22 @@ import {
   shouldRenderTextGenerationTraitsControl,
   reconcileRespondingUserInputRequestIds,
 } from "./ChatView.logic";
+
+function makeActivity(overrides: {
+  id?: string;
+  kind?: string;
+  payload?: Record<string, unknown>;
+}) {
+  return {
+    id: EventId.makeUnsafe(overrides.id ?? crypto.randomUUID()),
+    createdAt: "2026-03-18T00:00:00.000Z",
+    kind: overrides.kind ?? "tool.updated",
+    summary: "Activity",
+    tone: "info" as const,
+    payload: overrides.payload ?? {},
+    turnId: null,
+  };
+}
 
 describe("deriveComposerSendState", () => {
   it("treats expired terminal pills as non-sendable content", () => {
@@ -169,6 +186,38 @@ describe("reconcileRespondingUserInputRequestIds", () => {
         [{ requestId: ApprovalRequestId.makeUnsafe("request-1") }],
         [ApprovalRequestId.makeUnsafe("request-1")],
       ),
+    ).toEqual([]);
+  });
+});
+
+describe("collectRetryableUserInputRespondFailedRequestIds", () => {
+  it("keeps non-stale provider failures retryable", () => {
+    expect(
+      collectRetryableUserInputRespondFailedRequestIds([
+        makeActivity({
+          kind: "provider.user-input.respond.failed",
+          payload: {
+            requestId: "req-1",
+            detail: "Network timeout while replying",
+            failureClass: "provider_error",
+          },
+        }),
+      ]),
+    ).toEqual([ApprovalRequestId.makeUnsafe("req-1")]);
+  });
+
+  it("filters stale provider failures from retryable request ids", () => {
+    expect(
+      collectRetryableUserInputRespondFailedRequestIds([
+        makeActivity({
+          kind: "provider.user-input.respond.failed",
+          payload: {
+            requestId: "req-stale",
+            detail: "Stale pending user-input request: req-stale",
+            failureClass: "stale_pending_request",
+          },
+        }),
+      ]),
     ).toEqual([]);
   });
 });

@@ -213,7 +213,16 @@ export function collectRetryableUserInputRespondFailedRequestIds(
         ? ApprovalRequestId.makeUnsafe(payload.requestId)
         : null;
     const detail = payload && typeof payload.detail === "string" ? payload.detail : undefined;
-    if (!requestId || detail?.includes("stale pending request")) {
+    const failureClass =
+      payload?.failureClass === "stale_pending_request" ||
+      payload?.failureClass === "provider_error"
+        ? payload.failureClass
+        : undefined;
+    const staleByDetail =
+      typeof detail === "string" &&
+      detail.toLowerCase().includes("stale pending") &&
+      detail.toLowerCase().includes("request");
+    if (!requestId || failureClass === "stale_pending_request" || staleByDetail) {
       return [];
     }
     return [requestId];

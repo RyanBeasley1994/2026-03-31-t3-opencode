@@ -39,6 +39,8 @@ type ProviderIntentEvent = Extract<
   }
 >;
 
+type ProviderFailureClassification = "provider_error" | "stale_pending_request";
+
 function toNonEmptyProviderInput(value: string | undefined): string | undefined {
   const normalized = value?.trim();
   return normalized && normalized.length > 0 ? normalized : undefined;
@@ -187,6 +189,7 @@ const make = Effect.gen(function* () {
     readonly turnId: TurnId | null;
     readonly createdAt: string;
     readonly requestId?: string;
+    readonly failureClass?: ProviderFailureClassification;
   }) =>
     orchestrationEngine.dispatch({
       type: "thread.activity.append",
@@ -200,6 +203,7 @@ const make = Effect.gen(function* () {
         payload: {
           detail: input.detail,
           ...(input.requestId ? { requestId: input.requestId } : {}),
+          ...(input.failureClass ? { failureClass: input.failureClass } : {}),
         },
         turnId: input.turnId,
         createdAt: input.createdAt,
@@ -631,6 +635,7 @@ const make = Effect.gen(function* () {
         turnId: null,
         createdAt: event.payload.createdAt,
         requestId: event.payload.requestId,
+        failureClass: "provider_error",
       });
     }
 
@@ -643,19 +648,21 @@ const make = Effect.gen(function* () {
       .pipe(
         Effect.catchCause((cause) =>
           Effect.gen(function* () {
+            const staleRequest = isUnknownPendingApprovalRequestError(cause);
             yield* appendProviderFailureActivity({
               threadId: event.payload.threadId,
               kind: "provider.approval.respond.failed",
               summary: "Provider approval response failed",
-              detail: isUnknownPendingApprovalRequestError(cause)
+              detail: staleRequest
                 ? stalePendingRequestDetail("approval", event.payload.requestId)
                 : Cause.pretty(cause),
               turnId: null,
               createdAt: event.payload.createdAt,
               requestId: event.payload.requestId,
+              failureClass: staleRequest ? "stale_pending_request" : "provider_error",
             });
 
-            if (!isUnknownPendingApprovalRequestError(cause)) return;
+            if (!staleRequest) return;
           }),
         ),
       );
@@ -678,6 +685,7 @@ const make = Effect.gen(function* () {
         turnId: null,
         createdAt: event.payload.createdAt,
         requestId: event.payload.requestId,
+        failureClass: "provider_error",
       });
     }
 
@@ -688,19 +696,21 @@ const make = Effect.gen(function* () {
         answers: event.payload.answers,
       })
       .pipe(
-        Effect.catchCause((cause) =>
-          appendProviderFailureActivity({
+        Effect.catchCause((cause) => {
+          const staleRequest = isUnknownPendingUserInputRequestError(cause);
+          return appendProviderFailureActivity({
             threadId: event.payload.threadId,
             kind: "provider.user-input.respond.failed",
             summary: "Provider user input response failed",
-            detail: isUnknownPendingUserInputRequestError(cause)
+            detail: staleRequest
               ? stalePendingRequestDetail("user-input", event.payload.requestId)
               : Cause.pretty(cause),
             turnId: null,
             createdAt: event.payload.createdAt,
             requestId: event.payload.requestId,
-          }),
-        ),
+            failureClass: staleRequest ? "stale_pending_request" : "provider_error",
+          });
+        }),
       );
   });
 

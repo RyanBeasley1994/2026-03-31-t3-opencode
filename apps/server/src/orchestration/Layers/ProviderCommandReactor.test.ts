@@ -1475,6 +1475,7 @@ describe("ProviderCommandReactor", () => {
     expect(failureActivity?.payload).toMatchObject({
       requestId: "approval-request-1",
       detail: expect.stringContaining("Stale pending approval request: approval-request-1"),
+      failureClass: "stale_pending_request",
     });
 
     const resolvedActivity = thread?.activities.find(
@@ -1586,6 +1587,7 @@ describe("ProviderCommandReactor", () => {
     expect(failureActivity?.payload).toMatchObject({
       requestId: "user-input-request-1",
       detail: expect.stringContaining("Stale pending user-input request: user-input-request-1"),
+      failureClass: "stale_pending_request",
     });
 
     const resolvedActivity = thread?.activities.find(
@@ -1701,6 +1703,7 @@ describe("ProviderCommandReactor", () => {
       detail: expect.stringContaining(
         "Stale pending user-input request: user-input-request-opencode-1",
       ),
+      failureClass: "stale_pending_request",
     });
 
     const resolvedActivity = thread?.activities.find(

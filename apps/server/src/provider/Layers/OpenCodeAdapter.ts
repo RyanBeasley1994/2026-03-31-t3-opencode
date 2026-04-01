@@ -5,11 +5,15 @@ import type {
   AssistantMessage,
   Event,
   Part as OpenCodePart,
+  PermissionRequest,
   QuestionAnswer,
+  QuestionInfo,
+  QuestionRequest,
   Session,
   ToolPart as OpenCodeToolPart,
 } from "@opencode-ai/sdk/v2/client";
 import {
+  type ApprovalRequestId,
   type CanonicalRequestType,
   EventId,
   type ProviderApprovalDecision,
@@ -174,6 +178,13 @@ function toToolItemId(callId: string): RuntimeItemId {
   return RuntimeItemId.makeUnsafe(`opencode-tool:${callId}`);
 }
 
+function toTurnIdForOpenCodeMessage(messageId: string | undefined): TurnId | undefined {
+  if (!messageId || messageId.trim().length === 0) {
+    return undefined;
+  }
+  return toTurnIdForUserMessage(messageId);
+}
+
 function readSessionIdFromResumeCursor(resumeCursor: unknown): string | undefined {
   if (!resumeCursor || typeof resumeCursor !== "object" || Array.isArray(resumeCursor)) {
     return undefined;
@@ -194,6 +205,112 @@ function toApprovalReply(decision: ProviderApprovalDecision): "once" | "always" 
     default:
       return "reject";
   }
+}
+
+interface MappedOpenCodeQuestion {
+  readonly id: string;
+  readonly header: string;
+  readonly question: string;
+  readonly options: ReadonlyArray<{
+    readonly label: string;
+    readonly description: string;
+  }>;
+  readonly multiple?: boolean;
+  readonly custom?: boolean;
+}
+
+interface RuntimeQuestionPayload {
+  readonly id: string;
+  readonly header: string;
+  readonly question: string;
+  readonly options: ReadonlyArray<{
+    readonly label: string;
+    readonly description: string;
+  }>;
+  readonly multiple?: boolean;
+  readonly custom?: boolean;
+}
+
+function mapOpenCodeQuestions(
+  questions: ReadonlyArray<QuestionInfo>,
+): ReadonlyArray<MappedOpenCodeQuestion> {
+  const headerCounts = new Map<string, number>();
+  for (const question of questions) {
+    headerCounts.set(question.header, (headerCounts.get(question.header) ?? 0) + 1);
+  }
+
+  const seenHeaders = new Map<string, number>();
+  return questions.map((question) => {
+    const seenCount = (seenHeaders.get(question.header) ?? 0) + 1;
+    seenHeaders.set(question.header, seenCount);
+    const headerCount = headerCounts.get(question.header) ?? 0;
+    const id = headerCount > 1 ? `${question.header}#${seenCount}` : question.header;
+    return {
+      id,
+      header: question.header,
+      question: question.question,
+      options: question.options,
+      ...(question.multiple !== undefined ? { multiple: question.multiple } : {}),
+      ...(question.custom !== undefined ? { custom: question.custom } : {}),
+    };
+  });
+}
+
+function toRuntimeQuestionPayload(
+  questions: ReadonlyArray<MappedOpenCodeQuestion>,
+): ReadonlyArray<RuntimeQuestionPayload> {
+  return questions.map((question) => {
+    const payloadQuestion: {
+      id: string;
+      header: string;
+      question: string;
+      options: ReadonlyArray<{
+        readonly label: string;
+        readonly description: string;
+      }>;
+      multiple?: boolean;
+      custom?: boolean;
+    } = {
+      id: question.id,
+      header: question.header,
+      question: question.question,
+      options: question.options,
+    };
+    if (question.multiple !== undefined) {
+      payloadQuestion.multiple = question.multiple;
+    }
+    if (question.custom !== undefined) {
+      payloadQuestion.custom = question.custom;
+    }
+    return payloadQuestion;
+  });
+}
+
+function toPendingQuestionRequest(input: {
+  readonly turnId: TurnId | undefined;
+  readonly itemId: RuntimeItemId | undefined;
+  readonly questions: ReadonlyArray<MappedOpenCodeQuestion>;
+}): PendingQuestionRequest {
+  return {
+    kind: "question",
+    turnId: input.turnId,
+    itemId: input.itemId,
+    questions: input.questions.map((question) => ({
+      id: question.id,
+      ...(question.multiple !== undefined ? { multiple: question.multiple } : {}),
+      ...(question.custom !== undefined ? { custom: question.custom } : {}),
+    })),
+  };
+}
+
+function requestTypeForPermissionRequest(
+  request: PermissionRequest,
+  knownToolName: string | undefined,
+): CanonicalRequestType {
+  return toCanonicalRequestType({
+    permission: request.permission,
+    ...(knownToolName ? { toolName: knownToolName } : {}),
+  });
 }
 
 function toQuestionAnswers(
@@ -420,6 +537,127 @@ const makeOpenCodeAdapter = Effect.gen(function* () {
     ...(input.itemId ? { itemId: input.itemId } : {}),
     ...(input.requestId ? { requestId: input.requestId } : {}),
   });
+
+  const hydrateRecoveredPendingRequests = async (
+    state: OpenCodeSessionState,
+  ): Promise<Array<ProviderRuntimeEvent>> => {
+    const createdAt = nowIso();
+    const runtimeEvents: Array<ProviderRuntimeEvent> = [];
+
+    const permissionRequests = await state.lease.client.permission
+      .list({}, SDK_OPTIONS)
+      .then((result) => result.data as Array<PermissionRequest>);
+    for (const permissionRequest of permissionRequests) {
+      if (permissionRequest.sessionID !== state.sessionId) {
+        continue;
+      }
+      if (state.pendingRequests.has(permissionRequest.id)) {
+        continue;
+      }
+
+      const toolName = permissionRequest.tool
+        ? state.knownToolsByCallId.get(permissionRequest.tool.callID)?.toolName
+        : undefined;
+      const requestType = requestTypeForPermissionRequest(permissionRequest, toolName);
+      const turnId =
+        toTurnIdForOpenCodeMessage(permissionRequest.tool?.messageID) ?? state.activeTurnId;
+      const itemId = permissionRequest.tool
+        ? toToolItemId(permissionRequest.tool.callID)
+        : undefined;
+      state.pendingRequests.set(permissionRequest.id, {
+        kind: "permission",
+        requestType,
+        turnId,
+        itemId,
+      });
+      runtimeEvents.push({
+        ...runtimeEventBase({
+          threadId: state.threadId,
+          createdAt,
+          turnId,
+          itemId,
+          requestId: RuntimeRequestId.makeUnsafe(permissionRequest.id),
+        }),
+        type: "request.opened",
+        payload: {
+          requestType,
+          ...(summarizePermissionDetail(permissionRequest.patterns)
+            ? { detail: summarizePermissionDetail(permissionRequest.patterns) }
+            : {}),
+          args: permissionRequest,
+        },
+      });
+    }
+
+    const questionRequests = await state.lease.client.question
+      .list({}, SDK_OPTIONS)
+      .then((result) => result.data as Array<QuestionRequest>);
+    for (const questionRequest of questionRequests) {
+      if (questionRequest.sessionID !== state.sessionId) {
+        continue;
+      }
+      if (state.pendingRequests.has(questionRequest.id)) {
+        continue;
+      }
+
+      const mappedQuestions = mapOpenCodeQuestions(questionRequest.questions);
+      const turnId =
+        toTurnIdForOpenCodeMessage(questionRequest.tool?.messageID) ?? state.activeTurnId;
+      const itemId = questionRequest.tool ? toToolItemId(questionRequest.tool.callID) : undefined;
+      state.pendingRequests.set(
+        questionRequest.id,
+        toPendingQuestionRequest({
+          turnId,
+          itemId,
+          questions: mappedQuestions,
+        }),
+      );
+      runtimeEvents.push({
+        ...runtimeEventBase({
+          threadId: state.threadId,
+          createdAt,
+          turnId,
+          itemId,
+          requestId: RuntimeRequestId.makeUnsafe(questionRequest.id),
+        }),
+        type: "user-input.requested",
+        payload: {
+          questions: toRuntimeQuestionPayload(mappedQuestions),
+        },
+      });
+    }
+
+    return runtimeEvents;
+  };
+
+  const recoverPendingQuestionRequest = async (
+    state: OpenCodeSessionState,
+    requestId: ApprovalRequestId,
+  ): Promise<PendingQuestionRequest | undefined> => {
+    const existing = state.pendingRequests.get(requestId);
+    if (existing?.kind === "question") {
+      return existing;
+    }
+
+    const questionRequests = await state.lease.client.question
+      .list({}, SDK_OPTIONS)
+      .then((result) => result.data as Array<QuestionRequest>);
+    const match = questionRequests.find(
+      (request) => request.id === requestId && request.sessionID === state.sessionId,
+    );
+    if (!match) {
+      return undefined;
+    }
+
+    const mappedQuestions = mapOpenCodeQuestions(match.questions);
+    const recovered = toPendingQuestionRequest({
+      turnId: toTurnIdForOpenCodeMessage(match.tool?.messageID) ?? state.activeTurnId,
+      itemId: match.tool ? toToolItemId(match.tool.callID) : undefined,
+      questions: mappedQuestions,
+    });
+    state.pendingRequests.set(requestId, recovered);
+    return recovered;
+  };
 
   const publishAssistantCompletion = async (
     state: OpenCodeSessionState,
@@ -813,10 +1051,7 @@ const makeOpenCodeAdapter = Effect.gen(function* () {
         const toolName = event.properties.tool
           ? sessionState.knownToolsByCallId.get(event.properties.tool.callID)?.toolName
           : undefined;
-        const requestType = toCanonicalRequestType({
-          permission: event.properties.permission,
-          ...(toolName ? { toolName } : {}),
-        });
+        const requestType = requestTypeForPermissionRequest(event.properties, toolName);
         const turnId = sessionState.activeTurnId;
         markObservedTurnActivity(sessionState, turnId);
         const itemId = event.properties.tool
@@ -886,16 +1121,15 @@ const makeOpenCodeAdapter = Effect.gen(function* () {
         const itemId = event.properties.tool
           ? toToolItemId(event.properties.tool.callID)
           : undefined;
-        sessionState.pendingRequests.set(event.properties.id, {
-          kind: "question",
-          turnId,
-          itemId,
-          questions: event.properties.questions.map((question) => ({
-            id: question.header,
-            ...(question.multiple !== undefined ? { multiple: question.multiple } : {}),
-            ...(question.custom !== undefined ? { custom: question.custom } : {}),
-          })),
-        });
+        const mappedQuestions = mapOpenCodeQuestions(event.properties.questions);
+        sessionState.pendingRequests.set(
+          event.properties.id,
+          toPendingQuestionRequest({
+            turnId,
+            itemId,
+            questions: mappedQuestions,
+          }),
+        );
 
         await runPromise(
           publishRuntimeEvents([
@@ -909,14 +1143,7 @@ const makeOpenCodeAdapter = Effect.gen(function* () {
               }),
               type: "user-input.requested",
               payload: {
-                questions: event.properties.questions.map((question) => ({
-                  id: question.header,
-                  header: question.header,
-                  question: question.question,
-                  options: question.options,
-                  ...(question.multiple !== undefined ? { multiple: question.multiple } : {}),
-                  ...(question.custom !== undefined ? { custom: question.custom } : {}),
-                })),
+                questions: toRuntimeQuestionPayload(mappedQuestions),
               },
             },
           ]),
@@ -1261,6 +1488,37 @@ const makeOpenCodeAdapter = Effect.gen(function* () {
       state.orderedUserMessageIds = history.orderedUserMessageIds;
       state.lastCompletedTurnId = history.lastCompletedTurnId;
 
+      const recoveredPendingRuntimeEvents = resumedExistingSession
+        ? yield* Effect.tryPromise({
+            try: () => hydrateRecoveredPendingRequests(state),
+            catch: (cause) =>
+              toRequestError(
+                "session.pending.requests",
+                cause instanceof Error
+                  ? cause.message
+                  : "Failed to hydrate pending OpenCode interactive requests.",
+                cause,
+              ),
+          }).pipe(
+            Effect.catch((error) =>
+              Effect.succeed<Array<ProviderRuntimeEvent>>([
+                {
+                  ...runtimeEventBase({
+                    threadId: state.threadId,
+                    createdAt: nowIso(),
+                  }),
+                  type: "runtime.warning",
+                  payload: {
+                    message:
+                      "Recovered OpenCode session but could not hydrate pending interactive requests.",
+                    detail: error.detail,
+                  },
+                },
+              ]),
+            ),
+          )
+        : [];
+
       sessions.set(input.threadId, state);
       threadIdBySessionId.set(state.sessionId, input.threadId);
       yield* ensureWatcher(state).pipe(
@@ -1320,6 +1578,8 @@ const makeOpenCodeAdapter = Effect.gen(function* () {
           },
         });
       }
+
+      runtimeEvents.push(...recoveredPendingRuntimeEvents);
 
       yield* publishRuntimeEvents(runtimeEvents);
       return toProviderSessionSnapshot(state);
@@ -1638,8 +1898,16 @@ const makeOpenCodeAdapter = Effect.gen(function* () {
         return yield* missingSession(threadId);
       }
 
-      const pending = state.pendingRequests.get(requestId);
-      if (!pending || pending.kind !== "question") {
+      const pending = yield* Effect.tryPromise({
+        try: () => recoverPendingQuestionRequest(state, requestId),
+        catch: (cause) =>
+          toRequestError(
+            "question.list",
+            cause instanceof Error ? cause.message : "Failed to list pending OpenCode questions.",
+            cause,
+          ),
+      });
+      if (!pending) {
         return yield* new ProviderAdapterRequestError({
           provider: PROVIDER,
           method: "question.reply",
@@ -1647,12 +1915,14 @@ const makeOpenCodeAdapter = Effect.gen(function* () {
         });
       }
 
+      const questionAnswers = toQuestionAnswers(pending, answers);
+
       yield* Effect.tryPromise({
         try: () =>
           state.lease.client.question.reply(
             {
               requestID: requestId,
-              answers: toQuestionAnswers(pending, answers),
+              answers: questionAnswers,
             },
             SDK_OPTIONS,
           ),
@@ -1663,6 +1933,23 @@ const makeOpenCodeAdapter = Effect.gen(function* () {
             cause,
           ),
       });
+
+      state.pendingRequests.delete(requestId);
+      yield* publishRuntimeEvents([
+        {
+          ...runtimeEventBase({
+            threadId: state.threadId,
+            createdAt: nowIso(),
+            turnId: pending.turnId,
+            itemId: pending.itemId,
+            requestId: RuntimeRequestId.makeUnsafe(requestId),
+          }),
+          type: "user-input.resolved",
+          payload: {
+            answers: toUserInputAnswerRecord(pending, questionAnswers),
+          },
+        },
+      ]);
     });
 
   const stopSession: OpenCodeAdapterShape["stopSession"] = (threadId) =>
