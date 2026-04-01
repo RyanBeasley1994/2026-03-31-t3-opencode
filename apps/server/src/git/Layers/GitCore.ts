@@ -31,6 +31,7 @@ import { ServerConfig } from "../../config.ts";
 import { decodeJsonResult } from "@t3tools/shared/schemaJson";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
+const PUSH_TIMEOUT_MS = 10 * 60_000;
 const DEFAULT_MAX_OUTPUT_BYTES = 1_000_000;
 const OUTPUT_TRUNCATED_MARKER = "\n\n[truncated]";
 const PREPARED_COMMIT_PATCH_MAX_OUTPUT_BYTES = 49_000;
@@ -663,10 +664,13 @@ export const makeGitCore = Effect.fn("makeGitCore")(function* (options?: {
     args: readonly string[],
     allowNonZeroExit = false,
     env?: Record<string, string>,
+    timeoutMs?: number,
   ): Effect.Effect<void, GitCommandError> =>
-    executeGit(operation, cwd, args, { allowNonZeroExit, ...(env ? { env } : {}) }).pipe(
-      Effect.asVoid,
-    );
+    executeGit(operation, cwd, args, {
+      allowNonZeroExit,
+      ...(env ? { env } : {}),
+      ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+    }).pipe(Effect.asVoid);
 
   const runGitStdout = (
     operation: string,
