@@ -1438,7 +1438,7 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
   httpServer.on("upgrade", (request, socket, head) => {
     socket.on("error", () => {});
 
-    // If auth token is set (desktop mode), allow token-based auth
+    // If auth token is set (desktop mode), allow token-based auth only
     if (authToken) {
       let providedToken: string | null = null;
       try {
@@ -1453,8 +1453,10 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
         wss.handleUpgrade(request, socket, head, (ws) => {
           wss.emit("connection", ws, request);
         });
-        return;
+      } else {
+        rejectUpgrade(socket, 401, "Unauthorized WebSocket connection");
       }
+      return;
     }
 
     // Cookie-based session validation

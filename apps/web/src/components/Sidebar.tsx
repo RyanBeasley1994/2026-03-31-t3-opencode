@@ -57,7 +57,7 @@ import { isElectron } from "../env";
 import { APP_STAGE_LABEL, APP_VERSION } from "../branding";
 import { isTerminalFocused } from "../lib/terminalFocus";
 import { isLinuxPlatform, isMacPlatform, newCommandId, newProjectId } from "../lib/utils";
-import { useStore } from "../store";
+import { useStore, PROJECT_COLORS, PROJECT_COLOR_CLASSES, type ProjectColor } from "../store";
 import {
   resolveShortcutCommand,
   shortcutLabelForCommand,
@@ -376,6 +376,8 @@ export default function Sidebar() {
   const markThreadUnread = useStore((store) => store.markThreadUnread);
   const toggleProject = useStore((store) => store.toggleProject);
   const reorderProjects = useStore((store) => store.reorderProjects);
+  const projectColorsByCwd = useStore((store) => store.projectColorsByCwd);
+  const setProjectColor = useStore((store) => store.setProjectColor);
   const clearComposerDraftForThread = useComposerDraftStore((store) => store.clearDraftThread);
   const getDraftThreadByProjectId = useComposerDraftStore(
     (store) => store.getDraftThreadByProjectId,
@@ -443,7 +445,8 @@ export default function Sidebar() {
   const setSelectionAnchor = useThreadSelectionStore((s) => s.setAnchor);
   const isLinuxDesktop = isElectron && isLinuxPlatform(navigator.platform);
   const platform = navigator.platform;
-  const shouldBrowseForProjectImmediately = isElectron && !isLinuxDesktop;
+  const isRemoteDesktop = isElectron && Boolean(window.desktopBridge?.getServerUrl());
+  const shouldBrowseForProjectImmediately = isElectron && !isLinuxDesktop && !isRemoteDesktop;
   const shouldShowProjectPathEntry = addingProject && !shouldBrowseForProjectImmediately;
   const selectedGithubRepositoryDetails = useMemo(
     () =>
@@ -1013,15 +1016,47 @@ export default function Sidebar() {
       const project = projects.find((entry) => entry.id === projectId);
       if (!project) return;
 
+      const currentColor = projectColorsByCwd[project.cwd];
       const clicked = await api.contextMenu.show(
         [
           { id: "copy-path", label: "Copy Project Path" },
+          { id: "change-color", label: "Change Color…" },
+          ...(currentColor
+            ? [{ id: "remove-color" as const, label: "Remove Color" }]
+            : []),
           { id: "delete", label: "Remove project", destructive: true },
         ],
         position,
       );
       if (clicked === "copy-path") {
         copyPathToClipboard(project.cwd, { path: project.cwd });
+        return;
+      }
+      if (clicked === "change-color") {
+        const COLOR_LABELS: Record<ProjectColor, string> = {
+          red: "🔴  Red",
+          orange: "🟠  Orange",
+          yellow: "🟡  Yellow",
+          green: "🟢  Green",
+          blue: "🔵  Blue",
+          purple: "🟣  Purple",
+          pink: "🩷  Pink",
+        };
+        const colorClicked = await api.contextMenu.show(
+          PROJECT_COLORS.map((color) => ({
+            id: color,
+            label: COLOR_LABELS[color],
+            disabled: color === currentColor,
+          })),
+          position,
+        );
+        if (colorClicked) {
+          setProjectColor(project.cwd, colorClicked as ProjectColor);
+        }
+        return;
+      }
+      if (clicked === "remove-color") {
+        setProjectColor(project.cwd, null);
         return;
       }
       if (clicked !== "delete") return;
@@ -1065,7 +1100,9 @@ export default function Sidebar() {
       clearProjectDraftThreadId,
       copyPathToClipboard,
       getDraftThreadByProjectId,
+      projectColorsByCwd,
       projects,
+      setProjectColor,
       threads,
     ],
   );
@@ -1635,9 +1672,12 @@ export default function Sidebar() {
       );
     };
 
+    const projectColor = projectColorsByCwd[project.cwd];
+    const projectColorClasses = projectColor ? PROJECT_COLOR_CLASSES[projectColor] : null;
+
     return (
       <>
-        <div className="group/project-header relative">
+        <div className={`group/project-header relative ${projectColorClasses ? `border-l-2 ${projectColorClasses.border}` : ""}`}>
           <SidebarMenuButton
             ref={isManualProjectSorting ? dragHandleProps?.setActivatorNodeRef : undefined}
             size="sm"

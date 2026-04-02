@@ -12,10 +12,40 @@ import { Debouncer } from "@tanstack/react-pacer";
 
 // ── State ────────────────────────────────────────────────────────────
 
+export type ProjectColor =
+  | "red"
+  | "orange"
+  | "yellow"
+  | "green"
+  | "blue"
+  | "purple"
+  | "pink";
+
+export const PROJECT_COLORS: readonly ProjectColor[] = [
+  "red",
+  "orange",
+  "yellow",
+  "green",
+  "blue",
+  "purple",
+  "pink",
+];
+
+export const PROJECT_COLOR_CLASSES: Record<ProjectColor, { border: string; dot: string }> = {
+  red: { border: "border-l-red-500", dot: "bg-red-500" },
+  orange: { border: "border-l-orange-500", dot: "bg-orange-500" },
+  yellow: { border: "border-l-yellow-500", dot: "bg-yellow-500" },
+  green: { border: "border-l-green-500", dot: "bg-green-500" },
+  blue: { border: "border-l-blue-500", dot: "bg-blue-500" },
+  purple: { border: "border-l-purple-500", dot: "bg-purple-500" },
+  pink: { border: "border-l-pink-500", dot: "bg-pink-500" },
+};
+
 export interface AppState {
   projects: Project[];
   threads: Thread[];
   threadsHydrated: boolean;
+  projectColorsByCwd: Record<string, ProjectColor>;
 }
 
 const PERSISTED_STATE_KEY = "t3code:renderer-state:v8";
@@ -35,6 +65,7 @@ const initialState: AppState = {
   projects: [],
   threads: [],
   threadsHydrated: false,
+  projectColorsByCwd: {},
 };
 const persistedExpandedProjectCwds = new Set<string>();
 const persistedProjectOrderCwds: string[] = [];
@@ -49,6 +80,7 @@ function readPersistedState(): AppState {
     const parsed = JSON.parse(raw) as {
       expandedProjectCwds?: string[];
       projectOrderCwds?: string[];
+      projectColorsByCwd?: Record<string, string>;
     };
     persistedExpandedProjectCwds.clear();
     persistedProjectOrderCwds.length = 0;
@@ -62,7 +94,16 @@ function readPersistedState(): AppState {
         persistedProjectOrderCwds.push(cwd);
       }
     }
-    return { ...initialState };
+    const projectColorsByCwd: Record<string, ProjectColor> = {};
+    if (parsed.projectColorsByCwd) {
+      const validColors = new Set<string>(PROJECT_COLORS);
+      for (const [cwd, color] of Object.entries(parsed.projectColorsByCwd)) {
+        if (typeof cwd === "string" && validColors.has(color)) {
+          projectColorsByCwd[cwd] = color as ProjectColor;
+        }
+      }
+    }
+    return { ...initialState, projectColorsByCwd };
   } catch {
     return initialState;
   }
@@ -80,6 +121,7 @@ function persistState(state: AppState): void {
           .filter((project) => project.expanded)
           .map((project) => project.cwd),
         projectOrderCwds: state.projects.map((project) => project.cwd),
+        projectColorsByCwd: state.projectColorsByCwd,
       }),
     );
     if (!legacyKeysCleanedUp) {
@@ -396,6 +438,20 @@ export function reorderProjects(
   return { ...state, projects };
 }
 
+export function setProjectColor(
+  state: AppState,
+  cwd: string,
+  color: ProjectColor | null,
+): AppState {
+  if (color === null) {
+    if (!(cwd in state.projectColorsByCwd)) return state;
+    const { [cwd]: _, ...rest } = state.projectColorsByCwd;
+    return { ...state, projectColorsByCwd: rest };
+  }
+  if (state.projectColorsByCwd[cwd] === color) return state;
+  return { ...state, projectColorsByCwd: { ...state.projectColorsByCwd, [cwd]: color } };
+}
+
 export function setError(state: AppState, threadId: ThreadId, error: string | null): AppState {
   const threads = updateThread(state.threads, threadId, (t) => {
     if (t.error === error) return t;
@@ -432,6 +488,7 @@ interface AppStore extends AppState {
   toggleProject: (projectId: Project["id"]) => void;
   setProjectExpanded: (projectId: Project["id"], expanded: boolean) => void;
   reorderProjects: (draggedProjectId: Project["id"], targetProjectId: Project["id"]) => void;
+  setProjectColor: (cwd: string, color: ProjectColor | null) => void;
   setError: (threadId: ThreadId, error: string | null) => void;
   setThreadBranch: (threadId: ThreadId, branch: string | null, worktreePath: string | null) => void;
 }
@@ -447,6 +504,7 @@ export const useStore = create<AppStore>((set) => ({
     set((state) => setProjectExpanded(state, projectId, expanded)),
   reorderProjects: (draggedProjectId, targetProjectId) =>
     set((state) => reorderProjects(state, draggedProjectId, targetProjectId)),
+  setProjectColor: (cwd, color) => set((state) => setProjectColor(state, cwd, color)),
   setError: (threadId, error) => set((state) => setError(state, threadId, error)),
   setThreadBranch: (threadId, branch, worktreePath) =>
     set((state) => setThreadBranch(state, threadId, branch, worktreePath)),
