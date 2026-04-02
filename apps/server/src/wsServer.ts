@@ -190,12 +190,12 @@ function setSessionCookie(res: http.ServerResponse, sessionId: string): void {
   const maxAge = 30 * 24 * 60 * 60;
   res.setHeader(
     "Set-Cookie",
-    `t3code_session=${sessionId}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${maxAge}`,
+    `t3code_session=${sessionId}; HttpOnly; Path=/; SameSite=None; Secure; Max-Age=${maxAge}`,
   );
 }
 
 function clearSessionCookie(res: http.ServerResponse): void {
-  res.setHeader("Set-Cookie", "t3code_session=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0");
+  res.setHeader("Set-Cookie", "t3code_session=; HttpOnly; Path=/; SameSite=None; Secure; Max-Age=0");
 }
 
 const GH_REPO_LIST_DEFAULT_LIMIT = 60;
@@ -519,18 +519,35 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
 
   // HTTP server — serves static files or redirects to Vite dev server
   const httpServer = http.createServer((req, res) => {
+    const origin = req.headers.origin;
+
     const respond = (
       statusCode: number,
       headers: Record<string, string>,
       body?: string | Uint8Array,
     ) => {
-      res.writeHead(statusCode, headers);
+      const finalHeaders = { ...headers };
+      if (origin) {
+        finalHeaders["Access-Control-Allow-Origin"] = origin;
+        finalHeaders["Access-Control-Allow-Credentials"] = "true";
+      }
+      res.writeHead(statusCode, finalHeaders);
       res.end(body);
     };
 
     void runPromise(
       Effect.gen(function* () {
         const url = new URL(req.url ?? "/", `http://localhost:${port}`);
+
+        // ── CORS preflight for cross-origin desktop app requests ──────────
+        if (req.method === "OPTIONS") {
+          respond(204, {
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type",
+            "Access-Control-Max-Age": "86400",
+          });
+          return;
+        }
 
         // ── Auth API routes ──────────────────────
         if (url.pathname === "/api/auth/setup-required") {

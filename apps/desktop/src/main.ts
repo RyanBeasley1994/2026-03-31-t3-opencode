@@ -1382,8 +1382,9 @@ function registerIpcHandlers(): void {
         }
       }
     } else {
-      // Server mode — load the bundled UI, WebSocket connects to remote server via getWsUrl
+      // Server mode — set up CORS and load the bundled UI
       if (mainWindow && !mainWindow.isDestroyed()) {
+        setupRemoteCors(mainWindow);
         if (isDevelopment) {
           void mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL as string);
         } else {
@@ -1399,6 +1400,28 @@ function getIconOption(): { icon: string } | Record<string, never> {
   const ext = process.platform === "win32" ? "ico" : "png";
   const iconPath = resolveIconPath(ext);
   return iconPath ? { icon: iconPath } : {};
+}
+
+function setupRemoteCors(window: BrowserWindow): void {
+  // In server mode, the bundled UI (t3://app) makes cross-origin requests to the
+  // remote server. Inject CORS headers so the renderer's fetch calls succeed.
+  if (connectionMode !== "server" || !remoteServerUrl) return;
+  try {
+    const remoteOrigin = new URL(remoteServerUrl).origin;
+    window.webContents.session.webRequest.onHeadersReceived(
+      { urls: [`${remoteOrigin}/*`] },
+      (details, callback) => {
+        const headers = { ...details.responseHeaders };
+        headers["access-control-allow-origin"] = [DESKTOP_SCHEME + "://app"];
+        headers["access-control-allow-credentials"] = ["true"];
+        headers["access-control-allow-headers"] = ["Content-Type"];
+        headers["access-control-allow-methods"] = ["GET, POST, PUT, DELETE, OPTIONS"];
+        callback({ responseHeaders: headers });
+      },
+    );
+  } catch {
+    // Invalid remote URL — skip CORS setup
+  }
 }
 
 function createWindow(): BrowserWindow {
@@ -1421,26 +1444,7 @@ function createWindow(): BrowserWindow {
     },
   });
 
-  // In server mode, the bundled UI (t3://app) makes cross-origin requests to the
-  // remote server. Inject CORS headers so the renderer's fetch calls succeed.
-  if (connectionMode === "server" && remoteServerUrl) {
-    try {
-      const remoteOrigin = new URL(remoteServerUrl).origin;
-      window.webContents.session.webRequest.onHeadersReceived(
-        { urls: [`${remoteOrigin}/*`] },
-        (details, callback) => {
-          const headers = { ...details.responseHeaders };
-          headers["access-control-allow-origin"] = [DESKTOP_SCHEME + "://app"];
-          headers["access-control-allow-credentials"] = ["true"];
-          headers["access-control-allow-headers"] = ["Content-Type"];
-          headers["access-control-allow-methods"] = ["GET, POST, PUT, DELETE, OPTIONS"];
-          callback({ responseHeaders: headers });
-        },
-      );
-    } catch {
-      // Invalid remote URL — skip CORS setup
-    }
-  }
+  setupRemoteCors(window);
 
   window.webContents.on("context-menu", (event, params) => {
     event.preventDefault();
