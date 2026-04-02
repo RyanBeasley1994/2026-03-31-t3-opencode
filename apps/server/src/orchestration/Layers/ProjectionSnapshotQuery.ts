@@ -605,6 +605,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
               createdAt: row.createdAt,
               updatedAt: row.updatedAt,
               archivedAt: row.archivedAt,
+              assignedUserId: row.assignedUserId,
               deletedAt: row.deletedAt,
               messages: messagesByThread.get(row.threadId) ?? [],
               proposedPlans: proposedPlansByThread.get(row.threadId) ?? [],

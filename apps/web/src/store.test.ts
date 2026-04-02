@@ -74,6 +74,7 @@ function makeReadModelThread(overrides: Partial<OrchestrationReadModel["threads"
     createdAt: "2026-02-27T00:00:00.000Z",
     updatedAt: "2026-02-27T00:00:00.000Z",
     archivedAt: null,
+    assignedUserId: null,
     deletedAt: null,
     messages: [],
     activities: [],
