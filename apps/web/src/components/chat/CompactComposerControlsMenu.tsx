@@ -59,12 +59,15 @@ export const CompactComposerControlsMenu = memo(function CompactComposerControls
           {props.agents.length > 0 ? (
             props.agents.map((agent) => (
               <MenuRadioItem key={agent.name} value={agent.name}>
-                {agent.name}
+                <span className="capitalize">{agent.name}</span>
+                {agent.description ? (
+                  <span className="ml-1 text-muted-foreground text-xs">— {agent.description}</span>
+                ) : null}
               </MenuRadioItem>
             ))
           ) : (
             <>
-              <MenuRadioItem value="build">Chat</MenuRadioItem>
+              <MenuRadioItem value="build">Build</MenuRadioItem>
               <MenuRadioItem value="plan">Plan</MenuRadioItem>
             </>
           )}

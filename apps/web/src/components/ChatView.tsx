@@ -4181,7 +4181,9 @@ export default function ChatView({ threadId }: ChatViewProps) {
                               title={`Agent: ${interactionMode}`}
                             >
                               <BotIcon />
-                              <span className="sr-only sm:not-sr-only">{interactionMode}</span>
+                              <span className="sr-only sm:not-sr-only capitalize">
+                                {interactionMode}
+                              </span>
                             </Button>
 
                             <Separator
