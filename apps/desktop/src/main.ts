@@ -1296,6 +1296,10 @@ function registerIpcHandlers(): void {
     const config = rawConfig as Record<string, unknown>;
     if (config.mode !== "local" && config.mode !== "server") return;
     if (config.mode === "server" && typeof config.serverUrl !== "string") return;
+    if (config.mode === "server") {
+      const url = config.serverUrl as string;
+      if (!url.startsWith("http://") && !url.startsWith("https://")) return;
+    }
 
     const validated = {
       mode: config.mode as "local" | "server",
