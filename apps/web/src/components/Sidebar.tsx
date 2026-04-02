@@ -4,11 +4,13 @@ import {
   ChevronRightIcon,
   FolderIcon,
   GitPullRequestIcon,
+  LogOutIcon,
   PlusIcon,
   SettingsIcon,
   SquarePenIcon,
   TerminalIcon,
   TriangleAlertIcon,
+  UserIcon,
 } from "lucide-react";
 import { ProjectFavicon } from "./ProjectFavicon";
 import { autoAnimate } from "@formkit/auto-animate";
@@ -125,6 +127,8 @@ import {
 import { SidebarUpdatePill } from "./sidebar/SidebarUpdatePill";
 import { useCopyToClipboard } from "~/hooks/useCopyToClipboard";
 import { useSettings, useUpdateSettings } from "~/hooks/useSettings";
+import { useAuthStore } from "../authStore";
+import { authApi } from "../lib/authApi";
 
 const EMPTY_KEYBINDINGS: ResolvedKeybindingsConfig = [];
 const THREAD_PREVIEW_LIMIT = 6;
@@ -423,6 +427,14 @@ export default function Sidebar() {
   const suppressProjectClickAfterDragRef = useRef(false);
   const suppressProjectClickForContextMenuRef = useRef(false);
   const [desktopUpdateState, setDesktopUpdateState] = useState<DesktopUpdateState | null>(null);
+  const currentUser = useAuthStore((s) => s.user);
+  const [threadUserFilter, setThreadUserFilter] = useState<string | "all" | "mine">("mine");
+  const { data: usersData } = useQuery({
+    queryKey: ["auth", "users"],
+    queryFn: () => authApi.listUsers(),
+    staleTime: 60_000,
+  });
+  const allUsers = usersData?.users ?? [];
   const selectedThreadIds = useThreadSelectionStore((s) => s.selectedThreadIds);
   const toggleThreadSelection = useThreadSelectionStore((s) => s.toggleThread);
   const rangeSelectTo = useThreadSelectionStore((s) => s.rangeSelectTo);
@@ -1145,16 +1157,27 @@ export default function Sidebar() {
     () => threads.filter((thread) => thread.archivedAt === null),
     [threads],
   );
+  const userFilteredThreads = useMemo(() => {
+    if (!currentUser) return visibleThreads;
+    if (threadUserFilter === "all") return visibleThreads;
+    if (threadUserFilter === "mine") {
+      return visibleThreads.filter(
+        (t) => t.assignedUserId === currentUser.id || t.assignedUserId === null,
+      );
+    }
+    return visibleThreads.filter((t) => t.assignedUserId === threadUserFilter);
+  }, [visibleThreads, threadUserFilter, currentUser]);
   const sortedProjects = useMemo(
-    () => sortProjectsForSidebar(projects, visibleThreads, appSettings.sidebarProjectSortOrder),
-    [appSettings.sidebarProjectSortOrder, projects, visibleThreads],
+    () =>
+      sortProjectsForSidebar(projects, userFilteredThreads, appSettings.sidebarProjectSortOrder),
+    [appSettings.sidebarProjectSortOrder, projects, userFilteredThreads],
   );
   const isManualProjectSorting = appSettings.sidebarProjectSortOrder === "manual";
   const renderedProjects = useMemo(
     () =>
       sortedProjects.map((project) => {
         const projectThreads = sortThreadsForSidebar(
-          visibleThreads.filter((thread) => thread.projectId === project.id),
+          userFilteredThreads.filter((thread) => thread.projectId === project.id),
           appSettings.sidebarThreadSortOrder,
         );
         const threadStatuses = new Map(
@@ -1215,7 +1238,7 @@ export default function Sidebar() {
       expandedThreadListsByProject,
       routeThreadId,
       sortedProjects,
-      visibleThreads,
+      userFilteredThreads,
     ],
   );
   const visibleSidebarThreadIds = useMemo(
@@ -1480,6 +1503,14 @@ export default function Sidebar() {
                 />
               ) : (
                 <span className="min-w-0 flex-1 truncate text-xs">{thread.title}</span>
+              )}
+              {thread.assignedUserId && thread.assignedUserId !== currentUser?.id && (
+                <span className="ml-auto shrink-0 text-[10px] text-muted-foreground/50">
+                  {allUsers
+                    .find((u) => u.id === thread.assignedUserId)
+                    ?.displayName?.charAt(0)
+                    ?.toUpperCase() ?? "?"}
+                </span>
               )}
             </div>
             <div className="ml-auto flex shrink-0 items-center gap-1.5">
@@ -1995,6 +2026,37 @@ export default function Sidebar() {
                   Projects
                 </span>
                 <div className="flex items-center gap-1">
+                  <Menu>
+                    <MenuTrigger>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="gap-1.5 text-xs text-muted-foreground"
+                      >
+                        <UserIcon className="size-3" />
+                        {threadUserFilter === "mine"
+                          ? "My Threads"
+                          : threadUserFilter === "all"
+                            ? "All Threads"
+                            : (allUsers.find((u) => u.id === threadUserFilter)?.displayName ??
+                              "User")}
+                      </Button>
+                    </MenuTrigger>
+                    <MenuPopup>
+                      <MenuRadioGroup
+                        value={threadUserFilter}
+                        onValueChange={(v) => setThreadUserFilter(v as string)}
+                      >
+                        <MenuRadioItem value="mine">My Threads</MenuRadioItem>
+                        <MenuRadioItem value="all">All Threads</MenuRadioItem>
+                        {allUsers.map((user) => (
+                          <MenuRadioItem key={user.id} value={user.id}>
+                            {user.displayName}
+                          </MenuRadioItem>
+                        ))}
+                      </MenuRadioGroup>
+                    </MenuPopup>
+                  </Menu>
                   <ProjectSortMenu
                     projectSortOrder={appSettings.sidebarProjectSortOrder}
                     threadSortOrder={appSettings.sidebarThreadSortOrder}
@@ -2244,6 +2306,18 @@ export default function Sidebar() {
           <SidebarFooter className="p-2">
             <SidebarUpdatePill />
             <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  size="sm"
+                  className="gap-2 px-2 py-1.5 text-muted-foreground/70 hover:bg-accent hover:text-foreground"
+                  onClick={() => {
+                    useAuthStore.getState().logout();
+                  }}
+                >
+                  <LogOutIcon className="size-3.5" />
+                  <span className="text-xs">{currentUser?.displayName ?? "User"}</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
               <SidebarMenuItem>
                 <SidebarMenuButton
                   size="sm"
