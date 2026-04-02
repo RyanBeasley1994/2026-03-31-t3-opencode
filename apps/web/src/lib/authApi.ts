@@ -2,6 +2,11 @@ import type { User } from "@t3tools/contracts";
 
 function resolveApiBase(): string {
   if (typeof window === "undefined") return "";
+  // Desktop app in server mode — use the remote server URL
+  const bridgeUrl = window.desktopBridge?.getServerUrl();
+  if (bridgeUrl && bridgeUrl.length > 0) {
+    return bridgeUrl;
+  }
   const envWsUrl = import.meta.env.VITE_WS_URL as string | undefined;
   if (envWsUrl && envWsUrl.length > 0) {
     try {

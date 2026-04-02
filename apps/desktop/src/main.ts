@@ -65,6 +65,7 @@ const UPDATE_DOWNLOAD_CHANNEL = "desktop:update-download";
 const UPDATE_INSTALL_CHANNEL = "desktop:update-install";
 const UPDATE_CHECK_CHANNEL = "desktop:update-check";
 const GET_WS_URL_CHANNEL = "desktop:get-ws-url";
+const GET_SERVER_URL_CHANNEL = "desktop:get-server-url";
 const SAVE_CONNECTION_CONFIG_CHANNEL = "desktop:save-connection-config";
 const BASE_DIR = process.env.T3CODE_HOME?.trim() || Path.join(OS.homedir(), ".t3");
 const STATE_DIR = Path.join(BASE_DIR, "userdata");
@@ -1177,6 +1178,11 @@ function registerIpcHandlers(): void {
     }
   });
 
+  ipcMain.removeAllListeners(GET_SERVER_URL_CHANNEL);
+  ipcMain.on(GET_SERVER_URL_CHANNEL, (event) => {
+    event.returnValue = connectionMode === "server" ? remoteServerUrl : "";
+  });
+
   ipcMain.removeHandler(PICK_FOLDER_CHANNEL);
   ipcMain.handle(PICK_FOLDER_CHANNEL, async () => {
     const owner = BrowserWindow.getFocusedWindow() ?? mainWindow;
@@ -1414,6 +1420,27 @@ function createWindow(): BrowserWindow {
       sandbox: true,
     },
   });
+
+  // In server mode, the bundled UI (t3://app) makes cross-origin requests to the
+  // remote server. Inject CORS headers so the renderer's fetch calls succeed.
+  if (connectionMode === "server" && remoteServerUrl) {
+    try {
+      const remoteOrigin = new URL(remoteServerUrl).origin;
+      window.webContents.session.webRequest.onHeadersReceived(
+        { urls: [`${remoteOrigin}/*`] },
+        (details, callback) => {
+          const headers = { ...details.responseHeaders };
+          headers["access-control-allow-origin"] = [DESKTOP_SCHEME + "://app"];
+          headers["access-control-allow-credentials"] = ["true"];
+          headers["access-control-allow-headers"] = ["Content-Type"];
+          headers["access-control-allow-methods"] = ["GET, POST, PUT, DELETE, OPTIONS"];
+          callback({ responseHeaders: headers });
+        },
+      );
+    } catch {
+      // Invalid remote URL — skip CORS setup
+    }
+  }
 
   window.webContents.on("context-menu", (event, params) => {
     event.preventDefault();

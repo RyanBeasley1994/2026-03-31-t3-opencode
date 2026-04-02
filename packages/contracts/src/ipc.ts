@@ -123,6 +123,7 @@ export interface ConnectionConfig {
 
 export interface DesktopBridge {
   getWsUrl: () => string | null;
+  getServerUrl: () => string | null;
   pickFolder: () => Promise<string | null>;
   confirm: (message: string) => Promise<boolean>;
   setTheme: (theme: DesktopTheme) => Promise<void>;
