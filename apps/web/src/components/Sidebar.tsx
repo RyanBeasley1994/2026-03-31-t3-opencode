@@ -504,8 +504,8 @@ export default function Sidebar() {
   const threadGitStatusQueries = useQueries({
     queries: threadGitStatusCwds.map((cwd) => ({
       ...gitStatusQueryOptions(cwd),
-      staleTime: 30_000,
-      refetchInterval: 60_000,
+      staleTime: 10_000,
+      refetchInterval: 30_000,
     })),
   });
   const prByThreadId = useMemo(() => {
@@ -528,6 +528,28 @@ export default function Sidebar() {
     }
     return map;
   }, [threadGitStatusCwds, threadGitStatusQueries, threadGitTargets]);
+
+  // Auto-archive threads whose PR has been merged (client-side fallback for
+  // when the GitHub App webhook is unavailable or unreachable).
+  const prevPrStatesRef = useRef<Map<ThreadId, string | null>>(new Map());
+  useEffect(() => {
+    const prev = prevPrStatesRef.current;
+    for (const [threadId, pr] of prByThreadId) {
+      const prevState = prev.get(threadId) ?? null;
+      const currentState = pr?.state ?? null;
+      if (prevState !== "merged" && currentState === "merged") {
+        const thread = threads.find((t) => t.id === threadId);
+        if (thread && thread.archivedAt === null) {
+          void archiveThread(threadId).catch(() => {});
+        }
+      }
+    }
+    const next = new Map<ThreadId, string | null>();
+    for (const [threadId, pr] of prByThreadId) {
+      next.set(threadId, pr?.state ?? null);
+    }
+    prevPrStatesRef.current = next;
+  }, [prByThreadId, threads, archiveThread]);
 
   const openPrLink = useCallback((event: React.MouseEvent<HTMLElement>, prUrl: string) => {
     event.preventDefault();

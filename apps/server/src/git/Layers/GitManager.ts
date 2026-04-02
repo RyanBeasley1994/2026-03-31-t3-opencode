@@ -962,7 +962,13 @@ export const makeGitManager = Effect.fn("makeGitManager")(function* () {
             upstreamRef: details.upstreamRef,
           }).pipe(
             Effect.map((latest) => (latest ? toStatusPr(latest) : null)),
-            Effect.catch(() => Effect.succeed(null)),
+            Effect.catch((cause) =>
+              Effect.logWarning("findLatestPr failed during status check", {
+                cwd: input.cwd,
+                branch: details.branch,
+                cause: String(cause),
+              }).pipe(Effect.map(() => null)),
+            ),
           )
         : null;
 

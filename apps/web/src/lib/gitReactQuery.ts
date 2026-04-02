@@ -1,4 +1,8 @@
-import { type GitStackedAction } from "@t3tools/contracts";
+import {
+  type GitRunStackedActionResult,
+  type GitStackedAction,
+  type GitStatusResult,
+} from "@t3tools/contracts";
 import { mutationOptions, queryOptions, type QueryClient } from "@tanstack/react-query";
 import { ensureNativeApi } from "../nativeApi";
 
@@ -139,9 +143,54 @@ export function gitRunStackedActionMutationOptions(input: {
         ...(filePaths ? { filePaths } : {}),
       });
     },
+    onSuccess: (result) => {
+      applyStackedActionResultToStatusCache(input.queryClient, input.cwd, result);
+    },
     onSettled: async () => {
       await invalidateGitQueries(input.queryClient);
     },
+  });
+}
+
+function applyStackedActionResultToStatusCache(
+  queryClient: QueryClient,
+  cwd: string | null,
+  result: GitRunStackedActionResult,
+) {
+  if (!cwd) return;
+
+  const prCreated = result.pr.status === "created" || result.pr.status === "opened_existing";
+  const pushed = result.push.status === "pushed";
+  const committed = result.commit.status === "created";
+  if (!prCreated && !pushed && !committed) return;
+
+  queryClient.setQueryData<GitStatusResult>(gitQueryKeys.status(cwd), (current) => {
+    if (!current) return current;
+    return {
+      ...current,
+      ...(committed || pushed
+        ? { hasWorkingTreeChanges: false, workingTree: { files: [], insertions: 0, deletions: 0 } }
+        : {}),
+      ...(pushed ? { aheadCount: 0 as GitStatusResult["aheadCount"], hasUpstream: true } : {}),
+      ...(committed && !pushed
+        ? { aheadCount: ((current.aheadCount + 1) | 0) as GitStatusResult["aheadCount"] }
+        : {}),
+      ...(prCreated && result.pr.number != null && result.pr.url && result.pr.title
+        ? {
+            pr: {
+              number: result.pr.number,
+              title: result.pr.title,
+              url: result.pr.url,
+              baseBranch: result.pr.baseBranch ?? current.pr?.baseBranch ?? "",
+              headBranch: result.pr.headBranch ?? current.pr?.headBranch ?? current.branch ?? "",
+              state: "open" as const,
+            },
+          }
+        : {}),
+      ...(result.branch.status === "created" && result.branch.name
+        ? { branch: result.branch.name }
+        : {}),
+    };
   });
 }
 
