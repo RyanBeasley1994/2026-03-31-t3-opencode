@@ -35,6 +35,7 @@ import {
   Exit,
   FileSystem,
   Layer,
+  Option,
   Path,
   Ref,
   Result,
@@ -135,9 +136,9 @@ function rejectUpgrade(
   );
 }
 
-const WEB_UI_AUTH_CHALLENGE_HEADER = 'Basic realm="T3 Code", charset="UTF-8"';
+const _WEB_UI_AUTH_CHALLENGE_HEADER = 'Basic realm="T3 Code", charset="UTF-8"';
 
-function decodeBasicAuthHeader(
+function _decodeBasicAuthHeader(
   headerValue: string | undefined,
 ): { readonly username: string; readonly password: string } | null {
   if (!headerValue) return null;
@@ -157,14 +158,14 @@ function decodeBasicAuthHeader(
   };
 }
 
-function hasMatchingWebUiCredentials(
+function _hasMatchingWebUiCredentials(
   providedAuthHeader: string | undefined,
   expectedCredentials: {
     readonly username: string;
     readonly password: string;
   },
 ): boolean {
-  const decoded = decodeBasicAuthHeader(providedAuthHeader);
+  const decoded = _decodeBasicAuthHeader(providedAuthHeader);
   if (!decoded) return false;
   const expected = Buffer.from(
     `${expectedCredentials.username}:${expectedCredentials.password}`,
@@ -209,6 +210,33 @@ function websocketRawToString(raw: unknown): string | null {
 
 function toPosixRelativePath(input: string): string {
   return input.replaceAll("\\", "/");
+}
+
+function parseCookies(cookieHeader: string | undefined): Record<string, string> {
+  if (!cookieHeader) return {};
+  const cookies: Record<string, string> = {};
+  for (const pair of cookieHeader.split(";")) {
+    const [name, ...rest] = pair.trim().split("=");
+    if (name) cookies[name.trim()] = rest.join("=").trim();
+  }
+  return cookies;
+}
+
+function getSessionIdFromRequest(req: http.IncomingMessage): string | null {
+  const cookies = parseCookies(req.headers.cookie);
+  return cookies["t3code_session"] ?? null;
+}
+
+function setSessionCookie(res: http.ServerResponse, sessionId: string): void {
+  const maxAge = 30 * 24 * 60 * 60;
+  res.setHeader(
+    "Set-Cookie",
+    `t3code_session=${sessionId}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${maxAge}`,
+  );
+}
+
+function clearSessionCookie(res: http.ServerResponse): void {
+  res.setHeader("Set-Cookie", "t3code_session=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0");
 }
 
 const GH_REPO_LIST_DEFAULT_LIMIT = 60;
@@ -344,7 +372,7 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
     staticDir,
     devUrl,
     authToken,
-    webUiAuth,
+    webUiAuth: _webUiAuth,
     host,
     logWebSocketEvents,
     autoBootstrapProjectFromCwd,
@@ -367,6 +395,7 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
   const gitHubCli = yield* GitHubCli;
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
+  const userService = yield* UserService;
 
   yield* keybindingsManager.syncDefaultKeybindingsOnStartup.pipe(
     Effect.catch((error) =>
@@ -544,20 +573,209 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
     void runPromise(
       Effect.gen(function* () {
         const url = new URL(req.url ?? "/", `http://localhost:${port}`);
-        if (
-          webUiAuth &&
-          url.pathname !== "/api/github/webhook" &&
-          !hasMatchingWebUiCredentials(req.headers.authorization, webUiAuth)
-        ) {
+
+        // ── Auth API routes ──────────────────────
+        if (url.pathname === "/api/auth/setup-required") {
+          const required = yield* userService.isSetupRequired();
+          respond(200, { "Content-Type": "application/json" }, JSON.stringify({ required }));
+          return;
+        }
+
+        if (url.pathname === "/api/auth/setup" && req.method === "POST") {
+          const body = JSON.parse(Buffer.from(yield* readHttpRequestBody(req)).toString("utf8"));
+          const result = yield* userService
+            .setup({
+              username: body.username,
+              displayName: body.displayName,
+              password: body.password,
+            })
+            .pipe(Effect.mapError((e) => new RouteRequestError({ message: e.message })));
+          setSessionCookie(res, result.sessionId);
           respond(
-            401,
-            {
-              "Content-Type": "text/plain",
-              "WWW-Authenticate": WEB_UI_AUTH_CHALLENGE_HEADER,
-            },
-            "Unauthorized",
+            200,
+            { "Content-Type": "application/json" },
+            JSON.stringify({ user: result.user }),
           );
           return;
+        }
+
+        if (url.pathname === "/api/auth/login" && req.method === "POST") {
+          const body = JSON.parse(Buffer.from(yield* readHttpRequestBody(req)).toString("utf8"));
+          const result = yield* userService
+            .login({
+              username: body.username,
+              password: body.password,
+            })
+            .pipe(Effect.mapError((e) => new RouteRequestError({ message: e.message })));
+          setSessionCookie(res, result.sessionId);
+          respond(
+            200,
+            { "Content-Type": "application/json" },
+            JSON.stringify({ user: result.user }),
+          );
+          return;
+        }
+
+        if (url.pathname === "/api/auth/logout" && req.method === "POST") {
+          const sessionId = getSessionIdFromRequest(req);
+          if (sessionId) {
+            yield* userService.logout(sessionId).pipe(Effect.ignore({ log: true }));
+          }
+          clearSessionCookie(res);
+          respond(200, { "Content-Type": "application/json" }, JSON.stringify({}));
+          return;
+        }
+
+        if (url.pathname === "/api/auth/me") {
+          const sessionId = getSessionIdFromRequest(req);
+          if (!sessionId) {
+            respond(
+              401,
+              { "Content-Type": "application/json" },
+              JSON.stringify({ error: "Not authenticated" }),
+            );
+            return;
+          }
+          const maybeUser = yield* userService.validateSession(sessionId);
+          if (Option.isNone(maybeUser)) {
+            clearSessionCookie(res);
+            respond(
+              401,
+              { "Content-Type": "application/json" },
+              JSON.stringify({ error: "Session expired" }),
+            );
+            return;
+          }
+          respond(
+            200,
+            { "Content-Type": "application/json" },
+            JSON.stringify({ user: maybeUser.value }),
+          );
+          return;
+        }
+
+        if (url.pathname === "/api/auth/users") {
+          if (req.method === "GET") {
+            const sessionId = getSessionIdFromRequest(req);
+            if (!sessionId) {
+              respond(
+                401,
+                { "Content-Type": "application/json" },
+                JSON.stringify({ error: "Not authenticated" }),
+              );
+              return;
+            }
+            const maybeUser = yield* userService.validateSession(sessionId);
+            if (Option.isNone(maybeUser)) {
+              respond(
+                401,
+                { "Content-Type": "application/json" },
+                JSON.stringify({ error: "Session expired" }),
+              );
+              return;
+            }
+            const users = yield* userService.listUsers();
+            respond(200, { "Content-Type": "application/json" }, JSON.stringify({ users }));
+            return;
+          }
+
+          if (req.method === "POST") {
+            const sessionId = getSessionIdFromRequest(req);
+            if (!sessionId) {
+              respond(
+                401,
+                { "Content-Type": "application/json" },
+                JSON.stringify({ error: "Not authenticated" }),
+              );
+              return;
+            }
+            const maybeCaller = yield* userService.validateSession(sessionId);
+            if (Option.isNone(maybeCaller)) {
+              respond(
+                401,
+                { "Content-Type": "application/json" },
+                JSON.stringify({ error: "Session expired" }),
+              );
+              return;
+            }
+            const body = JSON.parse(Buffer.from(yield* readHttpRequestBody(req)).toString("utf8"));
+            const user = yield* userService
+              .createUser({
+                username: body.username,
+                displayName: body.displayName,
+                password: body.password,
+                role: body.role ?? "member",
+                callerRole: maybeCaller.value.role,
+              })
+              .pipe(Effect.mapError((e) => new RouteRequestError({ message: e.message })));
+            respond(201, { "Content-Type": "application/json" }, JSON.stringify({ user }));
+            return;
+          }
+        }
+
+        if (url.pathname.startsWith("/api/auth/users/") && req.method === "DELETE") {
+          const sessionId = getSessionIdFromRequest(req);
+          if (!sessionId) {
+            respond(
+              401,
+              { "Content-Type": "application/json" },
+              JSON.stringify({ error: "Not authenticated" }),
+            );
+            return;
+          }
+          const maybeCaller = yield* userService.validateSession(sessionId);
+          if (Option.isNone(maybeCaller)) {
+            respond(
+              401,
+              { "Content-Type": "application/json" },
+              JSON.stringify({ error: "Session expired" }),
+            );
+            return;
+          }
+          const targetUserId = url.pathname.slice("/api/auth/users/".length);
+          yield* userService
+            .deleteUser({
+              userId: targetUserId as any,
+              callerRole: maybeCaller.value.role,
+            })
+            .pipe(Effect.mapError((e) => new RouteRequestError({ message: e.message })));
+          respond(200, { "Content-Type": "application/json" }, JSON.stringify({}));
+          return;
+        }
+
+        // Auth check for non-API routes
+        if (!url.pathname.startsWith("/api/auth/") && url.pathname !== "/api/github/webhook") {
+          const isSetupNeeded = yield* userService.isSetupRequired();
+          if (!isSetupNeeded) {
+            const sessionId = getSessionIdFromRequest(req);
+            if (!sessionId) {
+              if (
+                url.pathname.startsWith("/api/") ||
+                url.pathname.startsWith(ATTACHMENTS_ROUTE_PREFIX)
+              ) {
+                respond(
+                  401,
+                  { "Content-Type": "application/json" },
+                  JSON.stringify({ error: "Not authenticated" }),
+                );
+                return;
+              }
+            } else {
+              const maybeUser = yield* userService.validateSession(sessionId);
+              if (
+                Option.isNone(maybeUser) &&
+                (url.pathname.startsWith("/api/") ||
+                  url.pathname.startsWith(ATTACHMENTS_ROUTE_PREFIX))
+              ) {
+                respond(
+                  401,
+                  { "Content-Type": "application/json" },
+                  JSON.stringify({ error: "Session expired" }),
+                );
+                return;
+              }
+            }
+          }
         }
 
         if (tryHandleProjectFaviconRequest(url, res)) {
@@ -1243,15 +1461,9 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
   });
 
   httpServer.on("upgrade", (request, socket, head) => {
-    socket.on("error", () => {}); // Prevent unhandled `EPIPE`/`ECONNRESET` from crashing the process if the client disconnects mid-handshake
+    socket.on("error", () => {});
 
-    if (webUiAuth && !hasMatchingWebUiCredentials(request.headers.authorization, webUiAuth)) {
-      rejectUpgrade(socket, 401, "Unauthorized WebSocket connection", {
-        "WWW-Authenticate": WEB_UI_AUTH_CHALLENGE_HEADER,
-      });
-      return;
-    }
-
+    // If auth token is set (desktop mode), allow token-based auth
     if (authToken) {
       let providedToken: string | null = null;
       try {
@@ -1262,15 +1474,48 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
         return;
       }
 
-      if (providedToken !== authToken) {
-        rejectUpgrade(socket, 401, "Unauthorized WebSocket connection");
+      if (providedToken === authToken) {
+        wss.handleUpgrade(request, socket, head, (ws) => {
+          wss.emit("connection", ws, request);
+        });
         return;
       }
     }
 
-    wss.handleUpgrade(request, socket, head, (ws) => {
-      wss.emit("connection", ws, request);
-    });
+    // Cookie-based session validation
+    const sessionId = getSessionIdFromRequest(request);
+    if (!sessionId) {
+      void runPromise(
+        userService.isSetupRequired().pipe(
+          Effect.map((required) => {
+            if (required) {
+              wss.handleUpgrade(request, socket, head, (ws) => {
+                wss.emit("connection", ws, request);
+              });
+            } else {
+              rejectUpgrade(socket, 401, "Unauthorized WebSocket connection");
+            }
+          }),
+          Effect.ignore({ log: true }),
+        ),
+      );
+      return;
+    }
+
+    void runPromise(
+      userService.validateSession(sessionId).pipe(
+        Effect.map((maybeUser) => {
+          if (Option.isNone(maybeUser)) {
+            rejectUpgrade(socket, 401, "Session expired");
+          } else {
+            wss.handleUpgrade(request, socket, head, (ws) => {
+              wss.emit("connection", ws, request);
+            });
+          }
+        }),
+        Effect.ignore({ log: true }),
+      ),
+    );
   });
 
   wss.on("connection", (ws) => {
