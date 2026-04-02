@@ -6,7 +6,9 @@
  *
  * @module Server
  */
+import fs from "node:fs";
 import http from "node:http";
+import nodePath from "node:path";
 import type { Duplex } from "node:stream";
 
 import Mime from "@effect/platform-node/Mime";
@@ -83,6 +85,12 @@ import { makeServerReadiness } from "./wsServer/readiness.ts";
 import { decodeJsonResult, formatSchemaError } from "@t3tools/shared/schemaJson";
 import { GithubAppAutomation } from "./github/Services/GithubAppAutomation.ts";
 import { UserService } from "./auth/UserService.ts";
+import { runProcess } from "./processRunner.ts";
+import {
+  buildPushCredentialEnv,
+  getInstallationIdForRepo,
+  getInstallationToken,
+} from "./github/githubApi.ts";
 
 /**
  * ServerShape - Service API for server lifecycle control.
@@ -204,6 +212,53 @@ function clearSessionCookie(res: http.ServerResponse): void {
 const GH_REPO_LIST_DEFAULT_LIMIT = 60;
 const GH_REPO_LIST_TIMEOUT_MS = 30_000;
 const GH_REPO_CLONE_TIMEOUT_MS = 120_000;
+
+function cloneWithGithubAppToken(input: {
+  repository: string;
+  destinationPath: string;
+  stateDir: string;
+  appId: string;
+}): Effect.Effect<void, RouteRequestError> {
+  return Effect.tryPromise({
+    try: async () => {
+      if (input.appId.length === 0) {
+        throw new Error("GitHub App ID not configured and gh CLI unavailable.");
+      }
+
+      const secretsPath = nodePath.join(input.stateDir, "github-app-secrets.json");
+      const secretsRaw = fs.readFileSync(secretsPath, "utf-8");
+      const secrets = JSON.parse(secretsRaw) as { privateKeyPem?: string };
+      const privateKeyPem = secrets.privateKeyPem?.trim() ?? "";
+      if (privateKeyPem.length === 0) {
+        throw new Error("GitHub App private key is empty.");
+      }
+
+      const parts = input.repository.split("/");
+      if (parts.length !== 2 || !parts[0] || !parts[1]) {
+        throw new Error(`Invalid repository format: ${input.repository}. Expected "owner/repo".`);
+      }
+      const [owner, repo] = parts;
+
+      const installationId = await Effect.runPromise(
+        getInstallationIdForRepo({ appId: input.appId, privateKeyPem, owner, repo }),
+      );
+      const token = await Effect.runPromise(
+        getInstallationToken({ appId: input.appId, privateKeyPem, installationId }),
+      );
+
+      const cloneUrl = `https://github.com/${input.repository}.git`;
+      await runProcess("git", ["clone", cloneUrl, input.destinationPath], {
+        cwd: nodePath.dirname(input.destinationPath),
+        timeoutMs: GH_REPO_CLONE_TIMEOUT_MS,
+        env: { ...process.env, ...buildPushCredentialEnv(token) },
+      });
+    },
+    catch: (cause) =>
+      new RouteRequestError({
+        message: `Failed to clone repository: ${cause instanceof Error ? cause.message : String(cause)}`,
+      }),
+  }).pipe(Effect.asVoid);
+}
 
 const RawGitHubProjectRepositoryList = Schema.Array(
   Schema.Struct({
@@ -1234,6 +1289,9 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
               }),
           ),
         );
+
+        // Try gh CLI first; fall back to git clone with GitHub App token
+        const cloneSettings = yield* serverSettingsManager.getSettings;
         yield* gitHubCli
           .execute({
             cwd,
@@ -1241,13 +1299,23 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
             timeoutMs: GH_REPO_CLONE_TIMEOUT_MS,
           })
           .pipe(
-            Effect.mapError(
-              (cause) =>
-                new RouteRequestError({
-                  message: `Failed to clone GitHub repository: ${cause.detail}`,
-                }),
+            Effect.catch(() =>
+              cloneWithGithubAppToken({
+                repository: body.repository,
+                destinationPath,
+                stateDir: serverConfig.stateDir,
+                appId: cloneSettings.githubApp.appId.trim(),
+              }),
+            ),
+            Effect.mapError((cause) =>
+              cause instanceof RouteRequestError
+                ? cause
+                : new RouteRequestError({
+                    message: `Failed to clone GitHub repository: ${(cause as { detail?: string }).detail ?? String(cause)}`,
+                  }),
             ),
           );
+
         return { workspaceRoot: destinationPath };
       }
 
