@@ -14,8 +14,8 @@ services:
       - "host.docker.internal:host-gateway"
     environment:
       T3_SERVER_UPSTREAM: ${T3_SERVER_UPSTREAM:-host.docker.internal:3773}
-      T3_WEB_UI_USER: ${T3CODE_WEB_UI_USER:-}
-      T3_WEB_UI_PASSWORD: ${T3CODE_WEB_UI_PASSWORD:-}
+      T3_WEB_UI_USER: ""
+      T3_WEB_UI_PASSWORD: ""
     ports:
       - "80:80"
       - "443:443"

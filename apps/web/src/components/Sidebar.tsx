@@ -104,6 +104,7 @@ import {
   SidebarMenuSubItem,
   SidebarSeparator,
   SidebarTrigger,
+  useSidebar,
 } from "./ui/sidebar";
 import { useThreadSelectionStore } from "../threadSelectionStore";
 import { isNonEmpty as isNonEmptyString } from "effect/String";
@@ -362,6 +363,10 @@ function SortableProjectItem({
 }
 
 export default function Sidebar() {
+  const { isMobile, setOpenMobile } = useSidebar();
+  const closeMobileSidebar = useCallback(() => {
+    if (isMobile) setOpenMobile(false);
+  }, [isMobile, setOpenMobile]);
   const projects = useStore((store) => store.projects);
   const threads = useStore((store) => store.threads);
   const markThreadUnread = useStore((store) => store.markThreadUnread);
@@ -957,6 +962,7 @@ export default function Sidebar() {
         clearSelection();
       }
       setSelectionAnchor(threadId);
+      closeMobileSidebar();
       void navigate({
         to: "/$threadId",
         params: { threadId },
@@ -964,6 +970,7 @@ export default function Sidebar() {
     },
     [
       clearSelection,
+      closeMobileSidebar,
       navigate,
       rangeSelectTo,
       selectedThreadIds.size,
@@ -978,12 +985,13 @@ export default function Sidebar() {
         clearSelection();
       }
       setSelectionAnchor(threadId);
+      closeMobileSidebar();
       void navigate({
         to: "/$threadId",
         params: { threadId },
       });
     },
-    [clearSelection, navigate, selectedThreadIds.size, setSelectionAnchor],
+    [clearSelection, closeMobileSidebar, navigate, selectedThreadIds.size, setSelectionAnchor],
   );
 
   const handleProjectContextMenu = useCallback(
@@ -1662,6 +1670,7 @@ export default function Sidebar() {
                   onClick={(event) => {
                     event.preventDefault();
                     event.stopPropagation();
+                    closeMobileSidebar();
                     void handleNewThread(project.id, {
                       envMode: resolveSidebarNewThreadEnvMode({
                         defaultEnvMode: appSettings.defaultThreadEnvMode,
@@ -2239,7 +2248,10 @@ export default function Sidebar() {
                 <SidebarMenuButton
                   size="sm"
                   className="gap-2 px-2 py-1.5 text-muted-foreground/70 hover:bg-accent hover:text-foreground"
-                  onClick={() => void navigate({ to: "/settings" })}
+                  onClick={() => {
+                    closeMobileSidebar();
+                    void navigate({ to: "/settings" });
+                  }}
                 >
                   <SettingsIcon className="size-3.5" />
                   <span className="text-xs">Settings</span>

@@ -6,11 +6,13 @@ import {
 } from "@t3tools/contracts";
 import { memo } from "react";
 import GitActionsControl from "../GitActionsControl";
-import { DiffIcon, TerminalSquareIcon } from "lucide-react";
+import { DiffIcon, EllipsisVerticalIcon, TerminalSquareIcon } from "lucide-react";
 import { Badge } from "../ui/badge";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import ProjectScriptsControl, { type NewProjectScriptInput } from "../ProjectScriptsControl";
 import { Toggle } from "../ui/toggle";
+import { Button } from "../ui/button";
+import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { SidebarTrigger } from "../ui/sidebar";
 import { OpenInPicker } from "./OpenInPicker";
 
@@ -72,84 +74,127 @@ export const ChatHeader = memo(function ChatHeader({
           {activeThreadTitle}
         </h2>
         {activeProjectName && (
-          <Badge variant="outline" className="min-w-0 shrink overflow-hidden">
+          <Badge variant="outline" className="hidden min-w-0 shrink overflow-hidden sm:inline-flex">
             <span className="min-w-0 truncate">{activeProjectName}</span>
           </Badge>
         )}
         {activeProjectName && !isGitRepo && (
-          <Badge variant="outline" className="shrink-0 text-[10px] text-amber-700">
+          <Badge
+            variant="outline"
+            className="hidden shrink-0 text-[10px] text-amber-700 sm:inline-flex"
+          >
             No Git
           </Badge>
         )}
       </div>
       <div className="flex shrink-0 items-center justify-end gap-2 @3xl/header-actions:gap-3">
         {activeProjectScripts && (
-          <ProjectScriptsControl
-            scripts={activeProjectScripts}
-            keybindings={keybindings}
-            preferredScriptId={preferredScriptId}
-            onRunScript={onRunProjectScript}
-            onAddScript={onAddProjectScript}
-            onUpdateScript={onUpdateProjectScript}
-            onDeleteScript={onDeleteProjectScript}
-          />
+          <span className="hidden sm:inline-flex">
+            <ProjectScriptsControl
+              scripts={activeProjectScripts}
+              keybindings={keybindings}
+              preferredScriptId={preferredScriptId}
+              onRunScript={onRunProjectScript}
+              onAddScript={onAddProjectScript}
+              onUpdateScript={onUpdateProjectScript}
+              onDeleteScript={onDeleteProjectScript}
+            />
+          </span>
         )}
         {activeProjectName && (
-          <OpenInPicker
-            keybindings={keybindings}
-            availableEditors={availableEditors}
-            openInCwd={openInCwd}
-          />
+          <span className="hidden sm:inline-flex">
+            <OpenInPicker
+              keybindings={keybindings}
+              availableEditors={availableEditors}
+              openInCwd={openInCwd}
+            />
+          </span>
         )}
-        {activeProjectName && <GitActionsControl gitCwd={gitCwd} activeThreadId={activeThreadId} />}
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Toggle
-                className="shrink-0"
-                pressed={terminalOpen}
-                onPressedChange={onToggleTerminal}
-                aria-label="Toggle terminal drawer"
-                variant="outline"
-                size="xs"
-                disabled={!terminalAvailable}
-              >
-                <TerminalSquareIcon className="size-3" />
-              </Toggle>
-            }
-          />
-          <TooltipPopup side="bottom">
-            {!terminalAvailable
-              ? "Terminal is unavailable until this thread has an active project."
-              : terminalToggleShortcutLabel
-                ? `Toggle terminal drawer (${terminalToggleShortcutLabel})`
-                : "Toggle terminal drawer"}
-          </TooltipPopup>
-        </Tooltip>
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Toggle
-                className="shrink-0"
-                pressed={diffOpen}
-                onPressedChange={onToggleDiff}
-                aria-label="Toggle diff panel"
-                variant="outline"
-                size="xs"
-                disabled={!isGitRepo}
-              >
-                <DiffIcon className="size-3" />
-              </Toggle>
-            }
-          />
-          <TooltipPopup side="bottom">
-            {!isGitRepo
-              ? "Diff panel is unavailable because this project is not a git repository."
-              : diffToggleShortcutLabel
-                ? `Toggle diff panel (${diffToggleShortcutLabel})`
-                : "Toggle diff panel"}
-          </TooltipPopup>
-        </Tooltip>
+        {activeProjectName && (
+          <span className="hidden sm:inline-flex">
+            <GitActionsControl gitCwd={gitCwd} activeThreadId={activeThreadId} />
+          </span>
+        )}
+        <span className="hidden sm:inline-flex">
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Toggle
+                  className="shrink-0"
+                  pressed={terminalOpen}
+                  onPressedChange={onToggleTerminal}
+                  aria-label="Toggle terminal drawer"
+                  variant="outline"
+                  size="xs"
+                  disabled={!terminalAvailable}
+                >
+                  <TerminalSquareIcon className="size-3" />
+                </Toggle>
+              }
+            />
+            <TooltipPopup side="bottom">
+              {!terminalAvailable
+                ? "Terminal is unavailable until this thread has an active project."
+                : terminalToggleShortcutLabel
+                  ? `Toggle terminal drawer (${terminalToggleShortcutLabel})`
+                  : "Toggle terminal drawer"}
+            </TooltipPopup>
+          </Tooltip>
+        </span>
+        <span className="hidden sm:inline-flex">
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Toggle
+                  className="shrink-0"
+                  pressed={diffOpen}
+                  onPressedChange={onToggleDiff}
+                  aria-label="Toggle diff panel"
+                  variant="outline"
+                  size="xs"
+                  disabled={!isGitRepo}
+                >
+                  <DiffIcon className="size-3" />
+                </Toggle>
+              }
+            />
+            <TooltipPopup side="bottom">
+              {!isGitRepo
+                ? "Diff panel is unavailable because this project is not a git repository."
+                : diffToggleShortcutLabel
+                  ? `Toggle diff panel (${diffToggleShortcutLabel})`
+                  : "Toggle diff panel"}
+            </TooltipPopup>
+          </Tooltip>
+        </span>
+
+        {/* Mobile overflow menu */}
+        <span className="inline-flex sm:hidden">
+          <Menu>
+            <MenuTrigger
+              render={
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="size-9 shrink-0 p-0 text-muted-foreground/70 hover:text-foreground/80"
+                  aria-label="More actions"
+                />
+              }
+            >
+              <EllipsisVerticalIcon className="size-4" />
+            </MenuTrigger>
+            <MenuPopup align="end">
+              <MenuItem disabled={!terminalAvailable} onClick={onToggleTerminal}>
+                <TerminalSquareIcon className="size-4 shrink-0" />
+                {terminalOpen ? "Hide terminal" : "Show terminal"}
+              </MenuItem>
+              <MenuItem disabled={!isGitRepo} onClick={onToggleDiff}>
+                <DiffIcon className="size-4 shrink-0" />
+                {diffOpen ? "Hide diff panel" : "Show diff panel"}
+              </MenuItem>
+            </MenuPopup>
+          </Menu>
+        </span>
       </div>
     </div>
   );
