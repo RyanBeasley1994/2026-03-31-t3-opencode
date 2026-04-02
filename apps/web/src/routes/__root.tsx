@@ -11,6 +11,7 @@ import { QueryClient, useQueryClient } from "@tanstack/react-query";
 import { Throttler } from "@tanstack/react-pacer";
 
 import { APP_DISPLAY_NAME } from "../branding";
+import { AuthGuard } from "../components/auth/AuthGuard";
 import { AppSidebarLayout } from "../components/AppSidebarLayout";
 import { Button } from "../components/ui/button";
 import { AnchoredToastProvider, ToastProvider, toastManager } from "../components/ui/toast";
@@ -38,6 +39,14 @@ export const Route = createRootRouteWithContext<{
 });
 
 function RootRouteView() {
+  return (
+    <AuthGuard>
+      <RootRouteInner />
+    </AuthGuard>
+  );
+}
+
+function RootRouteInner() {
   if (!readNativeApi()) {
     return (
       <div className="flex h-screen flex-col bg-background text-foreground">
