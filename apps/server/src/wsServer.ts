@@ -1091,6 +1091,7 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
           runtimeMode: "full-access",
           branch: null,
           worktreePath: null,
+          assignedUserId: null,
           createdAt,
         });
         welcomeBootstrapProjectId = bootstrapProjectId;
@@ -1307,13 +1308,14 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
                 appId: cloneSettings.githubApp.appId.trim(),
               }),
             ),
-            Effect.mapError((cause) =>
-              cause instanceof RouteRequestError
-                ? cause
-                : new RouteRequestError({
-                    message: `Failed to clone GitHub repository: ${(cause as { detail?: string }).detail ?? String(cause)}`,
-                  }),
-            ),
+            Effect.mapError((cause) => {
+              if (typeof cause === "object" && cause !== null && "_tag" in cause) {
+                return cause as RouteRequestError;
+              }
+              return new RouteRequestError({
+                message: `Failed to clone GitHub repository: ${(cause as { detail?: string }).detail ?? String(cause)}`,
+              });
+            }),
           );
 
         return { workspaceRoot: destinationPath };

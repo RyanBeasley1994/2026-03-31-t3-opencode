@@ -31,6 +31,7 @@ import { gitBranchesQueryOptions, gitCreateWorktreeMutationOptions } from "~/lib
 import { projectSearchEntriesQueryOptions } from "~/lib/projectReactQuery";
 import { serverConfigQueryOptions, serverQueryKeys } from "~/lib/serverReactQuery";
 import { isElectron } from "../env";
+import { useAuthStore } from "../authStore";
 import { parseDiffRouteSearch, stripDiffSearchParams } from "../diffRouteSearch";
 import {
   clampCollapsedComposerCursor,
@@ -257,6 +258,7 @@ interface PendingPullRequestSetupRequest {
 }
 
 export default function ChatView({ threadId }: ChatViewProps) {
+  const authUser = useAuthStore((s) => s.user);
   const threads = useStore((store) => store.threads);
   const projects = useStore((store) => store.projects);
   const markThreadVisited = useStore((store) => store.markThreadVisited);
@@ -2821,6 +2823,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
           interactionMode,
           branch: nextThreadBranch,
           worktreePath: nextThreadWorktreePath,
+          assignedUserId: authUser?.id ?? null,
           createdAt: activeThread.createdAt,
         });
         createdServerThreadForLocalDraft = true;
@@ -3272,6 +3275,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
         interactionMode: "default",
         branch: activeThread.branch,
         worktreePath: activeThread.worktreePath,
+        assignedUserId: authUser?.id ?? null,
         createdAt,
       })
       .then(() => {
