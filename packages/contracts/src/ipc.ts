@@ -115,6 +115,11 @@ export interface DesktopUpdateCheckResult {
   state: DesktopUpdateState;
 }
 
+export interface ConnectionConfig {
+  mode: "local" | "server";
+  serverUrl: string | null;
+}
+
 export interface DesktopBridge {
   getWsUrl: () => string | null;
   pickFolder: () => Promise<string | null>;
@@ -131,6 +136,7 @@ export interface DesktopBridge {
   downloadUpdate: () => Promise<DesktopUpdateActionResult>;
   installUpdate: () => Promise<DesktopUpdateActionResult>;
   onUpdateState: (listener: (state: DesktopUpdateState) => void) => () => void;
+  saveConnectionConfig: (config: ConnectionConfig) => Promise<void>;
 }
 
 export interface NativeApi {
