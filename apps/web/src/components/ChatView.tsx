@@ -680,6 +680,10 @@ export default function ChatView({ threadId }: ChatViewProps) {
     [selectedModel, selectedModelOptionsForDispatch, selectedProvider],
   );
   const selectedModelForPicker = selectedModel;
+  const availableAgents = useMemo(() => {
+    const provider = providerStatuses.find((p) => p.provider === selectedProvider);
+    return provider?.agents ?? [];
+  }, [providerStatuses, selectedProvider]);
   const phase = derivePhase(activeThread?.session ?? null);
   const isSendBusy = sendPhase !== "idle";
   const isPreparingWorktree = sendPhase === "preparing-worktree";
@@ -1237,28 +1241,41 @@ export default function ChatView({ threadId }: ChatViewProps) {
     }
 
     if (composerTrigger.kind === "slash-command") {
+      const agentCommands: Extract<ComposerCommandItem, { type: "slash-command" }>[] =
+        availableAgents.length > 0
+          ? availableAgents.map((agent) => ({
+              id: `slash:${agent.name}`,
+              type: "slash-command" as const,
+              command: agent.name,
+              label: `/${agent.name}`,
+              description: agent.description ?? `Switch to ${agent.name} agent`,
+            }))
+          : [
+              {
+                id: "slash:plan",
+                type: "slash-command" as const,
+                command: "plan",
+                label: "/plan",
+                description: "Switch this thread into plan mode",
+              },
+              {
+                id: "slash:build",
+                type: "slash-command" as const,
+                command: "build",
+                label: "/build",
+                description: "Switch this thread back to build mode",
+              },
+            ];
+
       const slashCommandItems = [
         {
           id: "slash:model",
-          type: "slash-command",
+          type: "slash-command" as const,
           command: "model",
           label: "/model",
           description: "Switch response model for this thread",
         },
-        {
-          id: "slash:plan",
-          type: "slash-command",
-          command: "plan",
-          label: "/plan",
-          description: "Switch this thread into plan mode",
-        },
-        {
-          id: "slash:default",
-          type: "slash-command",
-          command: "default",
-          label: "/default",
-          description: "Switch this thread back to normal chat mode",
-        },
+        ...agentCommands,
       ] satisfies ReadonlyArray<Extract<ComposerCommandItem, { type: "slash-command" }>>;
       const query = composerTrigger.query.trim().toLowerCase();
       if (!query) {
@@ -1285,7 +1302,13 @@ export default function ChatView({ threadId }: ChatViewProps) {
         label: name,
         description: `${providerLabel} · ${slug}`,
       }));
-  }, [composerTrigger, isPendingUserInputComposerState, searchableModelOptions, workspaceEntries]);
+  }, [
+    availableAgents,
+    composerTrigger,
+    isPendingUserInputComposerState,
+    searchableModelOptions,
+    workspaceEntries,
+  ]);
   const composerMenuOpen = !isPendingUserInputComposerState && Boolean(composerTrigger);
   const activeComposerMenuItem = useMemo(
     () =>
@@ -1819,8 +1842,14 @@ export default function ChatView({ threadId }: ChatViewProps) {
     ],
   );
   const toggleInteractionMode = useCallback(() => {
-    handleInteractionModeChange(interactionMode === "plan" ? "default" : "plan");
-  }, [handleInteractionModeChange, interactionMode]);
+    if (availableAgents.length > 0) {
+      const currentIndex = availableAgents.findIndex((a) => a.name === interactionMode);
+      const nextIndex = (currentIndex + 1) % availableAgents.length;
+      handleInteractionModeChange(availableAgents[nextIndex]!.name);
+    } else {
+      handleInteractionModeChange(interactionMode === "plan" ? "build" : "plan");
+    }
+  }, [availableAgents, handleInteractionModeChange, interactionMode]);
   const toggleRuntimeMode = useCallback(() => {
     void handleRuntimeModeChange(
       runtimeMode === "full-access" ? "approval-required" : "full-access",
@@ -3103,7 +3132,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
       interactionMode: nextInteractionMode,
     }: {
       text: string;
-      interactionMode: "default" | "plan";
+      interactionMode: ProviderInteractionMode;
     }) => {
       const api = readNativeApi();
       if (
@@ -3176,7 +3205,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
           titleSeed: activeThread.title,
           runtimeMode,
           interactionMode: nextInteractionMode,
-          ...(nextInteractionMode === "default" && activeProposedPlan
+          ...(nextInteractionMode === "build" && activeProposedPlan
             ? {
                 sourceProposedPlan: {
                   threadId: activeThread.id,
@@ -3187,9 +3216,9 @@ export default function ChatView({ threadId }: ChatViewProps) {
           createdAt: messageCreatedAt,
         });
         // Optimistically open the plan sidebar when implementing (not refining).
-        // "default" mode here means the agent is executing the plan, which produces
+        // "build" mode here means the agent is executing the plan, which produces
         // step-tracking activities that the sidebar will display.
-        if (nextInteractionMode === "default") {
+        if (nextInteractionMode === "build") {
           planSidebarDismissedForTurnRef.current = null;
           setPlanSidebarOpen(true);
         }
@@ -3272,7 +3301,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
         title: nextThreadTitle,
         modelSelection: nextThreadModelSelection,
         runtimeMode,
-        interactionMode: "default",
+        interactionMode: "build",
         branch: activeThread.branch,
         worktreePath: activeThread.worktreePath,
         assignedUserId: authUser?.id ?? null,
@@ -3292,7 +3321,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
           modelSelection: selectedModelSelection,
           titleSeed: nextThreadTitle,
           runtimeMode,
-          interactionMode: "default",
+          interactionMode: "build",
           createdAt,
         });
       })
@@ -3565,7 +3594,7 @@ export default function ChatView({ threadId }: ChatViewProps) {
           }
           return;
         }
-        void handleInteractionModeChange(item.command === "plan" ? "plan" : "default");
+        void handleInteractionModeChange(item.command);
         const applied = applyPromptReplacement(trigger.rangeStart, trigger.rangeEnd, "", {
           expectedText: snapshot.value.slice(trigger.rangeStart, trigger.rangeEnd),
         });
@@ -4118,10 +4147,11 @@ export default function ChatView({ threadId }: ChatViewProps) {
                               activePlan || sidebarProposedPlan || planSidebarOpen,
                             )}
                             interactionMode={interactionMode}
+                            agents={availableAgents}
                             planSidebarOpen={planSidebarOpen}
                             runtimeMode={runtimeMode}
                             traitsMenuContent={providerTraitsMenuContent}
-                            onToggleInteractionMode={toggleInteractionMode}
+                            onInteractionModeChange={handleInteractionModeChange}
                             onTogglePlanSidebar={togglePlanSidebar}
                             onToggleRuntimeMode={toggleRuntimeMode}
                           />
@@ -4148,16 +4178,10 @@ export default function ChatView({ threadId }: ChatViewProps) {
                               size="sm"
                               type="button"
                               onClick={toggleInteractionMode}
-                              title={
-                                interactionMode === "plan"
-                                  ? "Plan mode — click to return to normal chat mode"
-                                  : "Default mode — click to enter plan mode"
-                              }
+                              title={`Agent: ${interactionMode}`}
                             >
                               <BotIcon />
-                              <span className="sr-only sm:not-sr-only">
-                                {interactionMode === "plan" ? "Plan" : "Chat"}
-                              </span>
+                              <span className="sr-only sm:not-sr-only">{interactionMode}</span>
                             </Button>
 
                             <Separator

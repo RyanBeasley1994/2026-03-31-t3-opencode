@@ -72,7 +72,7 @@ describe("resolvePlanFollowUpSubmission", () => {
       }),
     ).toEqual({
       text: "PLEASE IMPLEMENT THIS PLAN:\n## Ship it\n\n- step 1",
-      interactionMode: "default",
+      interactionMode: "build",
     });
   });
 
