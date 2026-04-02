@@ -195,7 +195,10 @@ function setSessionCookie(res: http.ServerResponse, sessionId: string): void {
 }
 
 function clearSessionCookie(res: http.ServerResponse): void {
-  res.setHeader("Set-Cookie", "t3code_session=; HttpOnly; Path=/; SameSite=None; Secure; Max-Age=0");
+  res.setHeader(
+    "Set-Cookie",
+    "t3code_session=; HttpOnly; Path=/; SameSite=None; Secure; Max-Age=0",
+  );
 }
 
 const GH_REPO_LIST_DEFAULT_LIMIT = 60;

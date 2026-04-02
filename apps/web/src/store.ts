@@ -12,14 +12,7 @@ import { Debouncer } from "@tanstack/react-pacer";
 
 // ── State ────────────────────────────────────────────────────────────
 
-export type ProjectColor =
-  | "red"
-  | "orange"
-  | "yellow"
-  | "green"
-  | "blue"
-  | "purple"
-  | "pink";
+export type ProjectColor = "red" | "orange" | "yellow" | "green" | "blue" | "purple" | "pink";
 
 export const PROJECT_COLORS: readonly ProjectColor[] = [
   "red",

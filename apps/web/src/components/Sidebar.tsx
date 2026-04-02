@@ -1021,9 +1021,7 @@ export default function Sidebar() {
         [
           { id: "copy-path", label: "Copy Project Path" },
           { id: "change-color", label: "Change Color…" },
-          ...(currentColor
-            ? [{ id: "remove-color" as const, label: "Remove Color" }]
-            : []),
+          ...(currentColor ? [{ id: "remove-color" as const, label: "Remove Color" }] : []),
           { id: "delete", label: "Remove project", destructive: true },
         ],
         position,
@@ -1677,7 +1675,9 @@ export default function Sidebar() {
 
     return (
       <>
-        <div className={`group/project-header relative ${projectColorClasses ? `border-l-2 ${projectColorClasses.border}` : ""}`}>
+        <div
+          className={`group/project-header relative ${projectColorClasses ? `border-l-2 ${projectColorClasses.border}` : ""}`}
+        >
           <SidebarMenuButton
             ref={isManualProjectSorting ? dragHandleProps?.setActivatorNodeRef : undefined}
             size="sm"

@@ -211,7 +211,7 @@ describe("store pure functions", () => {
       ],
       threads: [],
       threadsHydrated: true,
-    projectColorsByCwd: {},
+      projectColorsByCwd: {},
     };
 
     const next = reorderProjects(state, project1, project3);
@@ -322,7 +322,7 @@ describe("store read model sync", () => {
       ],
       threads: [],
       threadsHydrated: true,
-    projectColorsByCwd: {},
+      projectColorsByCwd: {},
     };
     const readModel: OrchestrationReadModel = {
       snapshotSequence: 2,
