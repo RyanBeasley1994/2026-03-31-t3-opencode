@@ -2,6 +2,8 @@ import {
   ArchiveIcon,
   ArchiveX,
   ChevronDownIcon,
+  EyeIcon,
+  EyeOffIcon,
   InfoIcon,
   LoaderIcon,
   PlusIcon,
@@ -740,6 +742,25 @@ export function GeneralSettingsPanel() {
     [settings, updateSettings],
   );
 
+  const toggleModelVisibility = useCallback(
+    (provider: ProviderKind, slug: string) => {
+      const currentHidden = settings.providers[provider].hiddenModels;
+      const nextHidden = currentHidden.includes(slug)
+        ? currentHidden.filter((s) => s !== slug)
+        : [...currentHidden, slug];
+      updateSettings({
+        providers: {
+          ...settings.providers,
+          [provider]: {
+            ...settings.providers[provider],
+            hiddenModels: nextHidden,
+          },
+        },
+      });
+    },
+    [settings, updateSettings],
+  );
+
   const providerCards = PROVIDER_SETTINGS.map((providerSettings) => {
     const liveProvider = serverProviders.find(
       (candidate) => candidate.provider === providerSettings.provider,
@@ -752,6 +773,8 @@ export function GeneralSettingsPanel() {
       settings,
       serverProviders,
       providerSettings.provider,
+      null,
+      { includeHidden: true },
     ).map((model) => {
       const liveModel = liveProvider?.models.find((candidate) => candidate.slug === model.slug);
       return (
@@ -1324,13 +1347,46 @@ export function GeneralSettingsPanel() {
                             capLabels.push("Reasoning");
                           }
                           const hasDetails = capLabels.length > 0 || model.name !== model.slug;
+                          const isHidden = settings.providers[
+                            providerCard.provider
+                          ].hiddenModels.includes(model.slug);
 
                           return (
                             <div
                               key={`${providerCard.provider}:${model.slug}`}
                               className="flex items-center gap-2 py-1"
                             >
-                              <span className="min-w-0 truncate text-xs text-foreground/90">
+                              <button
+                                type="button"
+                                className={cn(
+                                  "shrink-0 transition-colors",
+                                  isHidden
+                                    ? "text-muted-foreground/30"
+                                    : "text-muted-foreground/70 hover:text-foreground",
+                                )}
+                                aria-label={
+                                  isHidden
+                                    ? `Show ${model.name} in picker`
+                                    : `Hide ${model.name} from picker`
+                                }
+                                onClick={() =>
+                                  toggleModelVisibility(providerCard.provider, model.slug)
+                                }
+                              >
+                                {isHidden ? (
+                                  <EyeOffIcon className="size-3.5" />
+                                ) : (
+                                  <EyeIcon className="size-3.5" />
+                                )}
+                              </button>
+                              <span
+                                className={cn(
+                                  "min-w-0 truncate text-xs",
+                                  isHidden
+                                    ? "text-muted-foreground/40 line-through"
+                                    : "text-foreground/90",
+                                )}
+                              >
                                 {model.name}
                               </span>
                               {hasDetails ? (

@@ -87,11 +87,13 @@ it.layer(NodeServices.layer)("server settings", (it) => {
         binaryPath: "/opt/homebrew/bin/codex",
         homePath: "/Users/julius/.codex",
         customModels: [],
+        hiddenModels: [],
       });
       assert.deepEqual(next.providers.claudeAgent, {
         enabled: true,
         binaryPath: "/usr/local/bin/claude",
         customModels: ["claude-custom"],
+        hiddenModels: [],
       });
       assert.deepEqual(next.textGenerationModelSelection, {
         provider: "codex",
@@ -222,11 +224,13 @@ it.layer(NodeServices.layer)("server settings", (it) => {
         binaryPath: "/opt/homebrew/bin/codex",
         homePath: "",
         customModels: [],
+        hiddenModels: [],
       });
       assert.deepEqual(next.providers.claudeAgent, {
         enabled: true,
         binaryPath: "/opt/homebrew/bin/claude",
         customModels: [],
+        hiddenModels: [],
       });
     }).pipe(Effect.provide(makeServerSettingsLayer())),
   );

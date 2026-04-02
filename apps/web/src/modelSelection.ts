@@ -90,6 +90,7 @@ export function getAppModelOptions(
   providers: ReadonlyArray<ServerProvider>,
   provider: ProviderKind,
   selectedModel?: string | null,
+  opts?: { includeHidden?: boolean },
 ): AppModelOption[] {
   const options: AppModelOption[] = getProviderModels(providers, provider).map(
     ({ slug, name, isCustom }) => ({
@@ -134,6 +135,14 @@ export function getAppModelOptions(
       name: normalizedSelectedModel,
       isCustom: true,
     });
+  }
+
+  if (!opts?.includeHidden) {
+    const hiddenModels = settings.providers[provider].hiddenModels;
+    if (hiddenModels.length > 0) {
+      const hiddenSet = new Set(hiddenModels);
+      return options.filter((option) => !hiddenSet.has(option.slug));
+    }
   }
 
   return options;

@@ -62,6 +62,7 @@ export const CodexSettings = Schema.Struct({
   binaryPath: makeBinaryPathSetting("codex"),
   homePath: TrimmedString.pipe(Schema.withDecodingDefault(() => "")),
   customModels: Schema.Array(Schema.String).pipe(Schema.withDecodingDefault(() => [])),
+  hiddenModels: Schema.Array(Schema.String).pipe(Schema.withDecodingDefault(() => [])),
 });
 export type CodexSettings = typeof CodexSettings.Type;
 
@@ -69,6 +70,7 @@ export const ClaudeSettings = Schema.Struct({
   enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(() => true)),
   binaryPath: makeBinaryPathSetting("claude"),
   customModels: Schema.Array(Schema.String).pipe(Schema.withDecodingDefault(() => [])),
+  hiddenModels: Schema.Array(Schema.String).pipe(Schema.withDecodingDefault(() => [])),
 });
 export type ClaudeSettings = typeof ClaudeSettings.Type;
 
@@ -76,6 +78,7 @@ export const OpenCodeSettings = Schema.Struct({
   enabled: Schema.Boolean.pipe(Schema.withDecodingDefault(() => true)),
   binaryPath: makeBinaryPathSetting("opencode"),
   customModels: Schema.Array(Schema.String).pipe(Schema.withDecodingDefault(() => [])),
+  hiddenModels: Schema.Array(Schema.String).pipe(Schema.withDecodingDefault(() => [])),
 });
 export type OpenCodeSettings = typeof OpenCodeSettings.Type;
 
@@ -167,18 +170,21 @@ const CodexSettingsPatch = Schema.Struct({
   binaryPath: Schema.optionalKey(Schema.String),
   homePath: Schema.optionalKey(Schema.String),
   customModels: Schema.optionalKey(Schema.Array(Schema.String)),
+  hiddenModels: Schema.optionalKey(Schema.Array(Schema.String)),
 });
 
 const ClaudeSettingsPatch = Schema.Struct({
   enabled: Schema.optionalKey(Schema.Boolean),
   binaryPath: Schema.optionalKey(Schema.String),
   customModels: Schema.optionalKey(Schema.Array(Schema.String)),
+  hiddenModels: Schema.optionalKey(Schema.Array(Schema.String)),
 });
 
 const OpenCodeSettingsPatch = Schema.Struct({
   enabled: Schema.optionalKey(Schema.Boolean),
   binaryPath: Schema.optionalKey(Schema.String),
   customModels: Schema.optionalKey(Schema.Array(Schema.String)),
+  hiddenModels: Schema.optionalKey(Schema.Array(Schema.String)),
 });
 
 const GithubAppSettingsPatch = Schema.Struct({
