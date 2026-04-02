@@ -21,8 +21,6 @@ services:
       - -lc
       - |
         SERVER_UPSTREAM="$${T3_SERVER_UPSTREAM:-host.docker.internal:3773}"
-        WEB_USER="$${T3_WEB_UI_USER}"
-        WEB_PASS="$${T3_WEB_UI_PASSWORD}"
 
         if [ ! -f /etc/ssl/klive/server.crt ] || [ ! -f /etc/ssl/klive/server.key ]; then
           apk add --no-cache openssl >/dev/null 2>&1 || true
@@ -31,19 +29,6 @@ services:
             -out /etc/ssl/klive/server.crt \
             -days 3650 \
             -subj "/CN=localhost" >/dev/null 2>&1
-        fi
-
-        # Generate htpasswd and basic-auth nginx snippet if credentials are set
-        AUTH_SNIPPET=""
-        if [ -n "$$WEB_USER" ] && [ -n "$$WEB_PASS" ]; then
-          apk add --no-cache apache2-utils >/dev/null 2>&1 || true
-          htpasswd -cb /etc/nginx/.htpasswd "$$WEB_USER" "$$WEB_PASS"
-          AUTH_SNIPPET='auth_basic "T3 Code"; auth_basic_user_file /etc/nginx/.htpasswd;'
-
-          # Pre-compute the Base64 Authorization header so nginx can forward it
-          # to the upstream server on WebSocket upgrades (browsers cannot send
-          # custom headers on WebSocket connections).
-          AUTH_HEADER="Basic $$(printf '%s:%s' "$$WEB_USER" "$$WEB_PASS" | base64)"
         fi
 
         cat <<'NGXEOF' >/etc/nginx/conf.d/default.conf
@@ -62,8 +47,6 @@ services:
             ssl_protocols TLSv1.2 TLSv1.3;
             ssl_ciphers HIGH:!aNULL:!MD5;
 
-            __T3_AUTH_SNIPPET__
-
             proxy_http_version 1.1;
             proxy_set_header Host $$host;
             proxy_set_header X-Real-IP $$remote_addr;
@@ -77,7 +60,6 @@ services:
                 proxy_pass http://__T3_SERVER_UPSTREAM__;
                 proxy_set_header Upgrade $$http_upgrade;
                 proxy_set_header Connection "upgrade";
-                proxy_set_header Authorization "__T3_AUTH_HEADER__";
             }
 
             location /attachments/ {
@@ -85,7 +67,6 @@ services:
             }
 
             location /api/github/webhook {
-                auth_basic off;
                 proxy_pass http://__T3_SERVER_UPSTREAM__;
             }
 
@@ -95,8 +76,6 @@ services:
         }
         NGXEOF
         sed -i "s|__T3_SERVER_UPSTREAM__|$${SERVER_UPSTREAM}|g" /etc/nginx/conf.d/default.conf
-        sed -i "s|__T3_AUTH_SNIPPET__|$${AUTH_SNIPPET}|g" /etc/nginx/conf.d/default.conf
-        sed -i "s|__T3_AUTH_HEADER__|$${AUTH_HEADER}|g" /etc/nginx/conf.d/default.conf
         exec nginx -g 'daemon off;'
     restart: unless-stopped
 
