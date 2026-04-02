@@ -149,13 +149,23 @@ export function createDevRunnerEnv({
     const resolvedBaseDir = yield* resolveBaseDir(t3Home);
     const isDesktopMode = mode === "dev:desktop";
 
+    // Only set VITE_DEV_SERVER_URL when a web dev server is expected to be running.
+    // In dev:server mode (server-only), the server should serve static files from
+    // the built web app rather than redirecting to a non-existent Vite dev server.
+    const shouldSetDevUrl = mode !== "dev:server" || devUrl !== undefined;
+
     const output: NodeJS.ProcessEnv = {
       ...baseEnv,
       PORT: String(webPort),
       ELECTRON_RENDERER_PORT: String(webPort),
-      VITE_DEV_SERVER_URL: devUrl?.toString() ?? `http://localhost:${webPort}`,
       T3CODE_HOME: resolvedBaseDir,
     };
+
+    if (shouldSetDevUrl) {
+      output.VITE_DEV_SERVER_URL = devUrl?.toString() ?? `http://localhost:${webPort}`;
+    } else {
+      delete output.VITE_DEV_SERVER_URL;
+    }
 
     if (!isDesktopMode) {
       output.T3CODE_PORT = String(serverPort);
