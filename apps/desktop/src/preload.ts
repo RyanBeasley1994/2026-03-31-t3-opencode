@@ -40,7 +40,8 @@ contextBridge.exposeInMainWorld("desktopBridge", {
   checkForUpdate: () => ipcRenderer.invoke(UPDATE_CHECK_CHANNEL),
   downloadUpdate: () => ipcRenderer.invoke(UPDATE_DOWNLOAD_CHANNEL),
   installUpdate: () => ipcRenderer.invoke(UPDATE_INSTALL_CHANNEL),
-  saveConnectionConfig: (config: ConnectionConfig) => ipcRenderer.invoke(SAVE_CONNECTION_CONFIG_CHANNEL, config),
+  saveConnectionConfig: (config: ConnectionConfig) =>
+    ipcRenderer.invoke(SAVE_CONNECTION_CONFIG_CHANNEL, config),
   onUpdateState: (listener) => {
     const wrappedListener = (_event: Electron.IpcRendererEvent, state: unknown) => {
       if (typeof state !== "object" || state === null) return;

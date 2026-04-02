@@ -1411,7 +1411,9 @@ function createWindow(): BrowserWindow {
   });
 
   if (connectionMode === "pending") {
-    void window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(connectionScreenHtml())}`);
+    void window.loadURL(
+      `data:text/html;charset=utf-8,${encodeURIComponent(connectionScreenHtml())}`,
+    );
   } else if (connectionMode === "server") {
     void window.loadURL(remoteServerUrl);
   } else if (isDevelopment) {
