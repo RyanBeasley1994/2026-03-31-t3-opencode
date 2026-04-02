@@ -38,20 +38,17 @@ const makeUserSessionRepository = Effect.gen(function* () {
 
   const deleteByIdRow = SqlSchema.void({
     Request: DeleteSessionInput,
-    execute: ({ sessionId }) =>
-      sql`DELETE FROM user_sessions WHERE session_id = ${sessionId}`,
+    execute: ({ sessionId }) => sql`DELETE FROM user_sessions WHERE session_id = ${sessionId}`,
   });
 
   const deleteByUserIdRow = SqlSchema.void({
     Request: DeleteUserSessionsInput,
-    execute: ({ userId }) =>
-      sql`DELETE FROM user_sessions WHERE user_id = ${userId}`,
+    execute: ({ userId }) => sql`DELETE FROM user_sessions WHERE user_id = ${userId}`,
   });
 
   const deleteExpiredRow = SqlSchema.void({
     Request: Schema.Void,
-    execute: () =>
-      sql`DELETE FROM user_sessions WHERE expires_at < ${new Date().toISOString()}`,
+    execute: () => sql`DELETE FROM user_sessions WHERE expires_at < ${new Date().toISOString()}`,
   });
 
   const create: UserSessionRepositoryShape["create"] = (row) =>
@@ -61,15 +58,30 @@ const makeUserSessionRepository = Effect.gen(function* () {
     getByIdRow(input).pipe(Effect.mapError(toPersistenceSqlError("UserSessionRepository.getById")));
 
   const deleteById: UserSessionRepositoryShape["deleteById"] = (input) =>
-    deleteByIdRow(input).pipe(Effect.mapError(toPersistenceSqlError("UserSessionRepository.deleteById")));
+    deleteByIdRow(input).pipe(
+      Effect.mapError(toPersistenceSqlError("UserSessionRepository.deleteById")),
+    );
 
   const deleteByUserId: UserSessionRepositoryShape["deleteByUserId"] = (input) =>
-    deleteByUserIdRow(input).pipe(Effect.mapError(toPersistenceSqlError("UserSessionRepository.deleteByUserId")));
+    deleteByUserIdRow(input).pipe(
+      Effect.mapError(toPersistenceSqlError("UserSessionRepository.deleteByUserId")),
+    );
 
   const deleteExpired: UserSessionRepositoryShape["deleteExpired"] = () =>
-    deleteExpiredRow().pipe(Effect.mapError(toPersistenceSqlError("UserSessionRepository.deleteExpired")));
+    deleteExpiredRow().pipe(
+      Effect.mapError(toPersistenceSqlError("UserSessionRepository.deleteExpired")),
+    );
 
-  return { create, getById, deleteById, deleteByUserId, deleteExpired } satisfies UserSessionRepositoryShape;
+  return {
+    create,
+    getById,
+    deleteById,
+    deleteByUserId,
+    deleteExpired,
+  } satisfies UserSessionRepositoryShape;
 });
 
-export const UserSessionRepositoryLive = Layer.effect(UserSessionRepository, makeUserSessionRepository);
+export const UserSessionRepositoryLive = Layer.effect(
+  UserSessionRepository,
+  makeUserSessionRepository,
+);

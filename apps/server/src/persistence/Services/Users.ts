@@ -24,14 +24,17 @@ export type DeleteUserInput = typeof DeleteUserInput.Type;
 
 export interface UserRepositoryShape {
   readonly upsert: (row: ProjectionUser) => Effect.Effect<void, ProjectionRepositoryError>;
-  readonly getById: (input: GetUserInput) => Effect.Effect<Option.Option<ProjectionUser>, ProjectionRepositoryError>;
-  readonly getByUsername: (input: GetUserByUsernameInput) => Effect.Effect<Option.Option<ProjectionUser>, ProjectionRepositoryError>;
+  readonly getById: (
+    input: GetUserInput,
+  ) => Effect.Effect<Option.Option<ProjectionUser>, ProjectionRepositoryError>;
+  readonly getByUsername: (
+    input: GetUserByUsernameInput,
+  ) => Effect.Effect<Option.Option<ProjectionUser>, ProjectionRepositoryError>;
   readonly listAll: () => Effect.Effect<ReadonlyArray<ProjectionUser>, ProjectionRepositoryError>;
   readonly count: () => Effect.Effect<number, ProjectionRepositoryError>;
   readonly deleteById: (input: DeleteUserInput) => Effect.Effect<void, ProjectionRepositoryError>;
 }
 
-export class UserRepository extends ServiceMap.Service<
-  UserRepository,
-  UserRepositoryShape
->()("t3/persistence/Services/Users/UserRepository") {}
+export class UserRepository extends ServiceMap.Service<UserRepository, UserRepositoryShape>()(
+  "t3/persistence/Services/Users/UserRepository",
+) {}

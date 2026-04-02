@@ -69,7 +69,11 @@ export function LoginForm() {
             />
           </div>
 
-          <Button type="submit" className="w-full" disabled={submitting || !username.trim() || !password}>
+          <Button
+            type="submit"
+            className="w-full"
+            disabled={submitting || !username.trim() || !password}
+          >
             {submitting ? "Signing in..." : "Sign in"}
           </Button>
         </form>

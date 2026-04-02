@@ -118,6 +118,7 @@ export interface DesktopUpdateCheckResult {
 export interface ConnectionConfig {
   mode: "local" | "server";
   serverUrl: string | null;
+  authToken: string | null;
 }
 
 export interface DesktopBridge {

@@ -30,7 +30,11 @@ import { NetService } from "@t3tools/shared/Net";
 import { RotatingFileSink } from "@t3tools/shared/logging";
 import { showDesktopConfirmDialog } from "./confirmDialog";
 import { syncShellEnvironment } from "./syncShellEnvironment";
-import { readConnectionConfig, writeConnectionConfig } from "./connectionConfig";
+import {
+  deleteConnectionConfig,
+  readConnectionConfig,
+  writeConnectionConfig,
+} from "./connectionConfig";
 import { connectionScreenHtml } from "./connectionScreen";
 import { getAutoUpdateDisabledReason, shouldBroadcastDownloadProgress } from "./updateState";
 import {
@@ -91,6 +95,7 @@ let backendAuthToken = "";
 let backendWsUrl = "";
 let connectionMode: "local" | "server" | "pending" = "pending";
 let remoteServerUrl = "";
+let remoteAuthToken = "";
 let restartAttempt = 0;
 let restartTimer: ReturnType<typeof setTimeout> | null = null;
 let isQuitting = false;
@@ -598,6 +603,10 @@ function configureApplicationMenu(): void {
           accelerator: "CmdOrCtrl+,",
           click: () => dispatchMenuAction("open-settings"),
         },
+        {
+          label: "Change Connection Mode...",
+          click: () => resetConnectionMode(),
+        },
         { type: "separator" },
         { role: "services" },
         { type: "separator" },
@@ -621,6 +630,10 @@ function configureApplicationMenu(): void {
                 label: "Settings...",
                 accelerator: "CmdOrCtrl+,",
                 click: () => dispatchMenuAction("open-settings"),
+              },
+              {
+                label: "Change Connection Mode...",
+                click: () => resetConnectionMode(),
               },
               { type: "separator" as const },
             ]),
@@ -1127,10 +1140,41 @@ async function stopBackendAndWaitForExit(timeoutMs = 5_000): Promise<void> {
   });
 }
 
+function resetConnectionMode(): void {
+  deleteConnectionConfig(STATE_DIR);
+  stopBackend();
+  connectionMode = "pending";
+  remoteServerUrl = "";
+  remoteAuthToken = "";
+  backendWsUrl = "";
+  backendPort = 0;
+  backendAuthToken = "";
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    void mainWindow.loadURL(
+      `data:text/html;charset=utf-8,${encodeURIComponent(connectionScreenHtml())}`,
+    );
+  }
+}
+
 function registerIpcHandlers(): void {
   ipcMain.removeAllListeners(GET_WS_URL_CHANNEL);
   ipcMain.on(GET_WS_URL_CHANNEL, (event) => {
-    event.returnValue = connectionMode === "server" ? "" : backendWsUrl;
+    if (connectionMode === "server") {
+      // Derive WebSocket URL from the remote server HTTP URL
+      try {
+        const parsed = new URL(remoteServerUrl);
+        parsed.protocol = parsed.protocol === "https:" ? "wss:" : "ws:";
+        parsed.pathname = "/ws";
+        if (remoteAuthToken) {
+          parsed.searchParams.set("token", remoteAuthToken);
+        }
+        event.returnValue = parsed.toString();
+      } catch {
+        event.returnValue = "";
+      }
+    } else {
+      event.returnValue = backendWsUrl;
+    }
   });
 
   ipcMain.removeHandler(PICK_FOLDER_CHANNEL);
@@ -1304,10 +1348,15 @@ function registerIpcHandlers(): void {
     const validated = {
       mode: config.mode as "local" | "server",
       serverUrl: config.mode === "server" ? (config.serverUrl as string) : null,
+      authToken:
+        config.mode === "server" && typeof config.authToken === "string" && config.authToken
+          ? (config.authToken as string)
+          : null,
     };
     writeConnectionConfig(STATE_DIR, validated);
     connectionMode = validated.mode;
     remoteServerUrl = validated.serverUrl ?? "";
+    remoteAuthToken = validated.authToken ?? "";
 
     if (connectionMode === "local") {
       // Start backend and load the bundled app
@@ -1327,9 +1376,13 @@ function registerIpcHandlers(): void {
         }
       }
     } else {
-      // Server mode — load the remote URL directly
+      // Server mode — load the bundled UI, WebSocket connects to remote server via getWsUrl
       if (mainWindow && !mainWindow.isDestroyed()) {
-        void mainWindow.loadURL(remoteServerUrl);
+        if (isDevelopment) {
+          void mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL as string);
+        } else {
+          void mainWindow.loadURL(`${DESKTOP_SCHEME}://app/index.html`);
+        }
       }
     }
   });
@@ -1414,8 +1467,6 @@ function createWindow(): BrowserWindow {
     void window.loadURL(
       `data:text/html;charset=utf-8,${encodeURIComponent(connectionScreenHtml())}`,
     );
-  } else if (connectionMode === "server") {
-    void window.loadURL(remoteServerUrl);
   } else if (isDevelopment) {
     void window.loadURL(process.env.VITE_DEV_SERVER_URL as string);
     window.webContents.openDevTools({ mode: "detach" });
@@ -1458,6 +1509,7 @@ async function bootstrap(): Promise<void> {
 
   connectionMode = config.mode;
   remoteServerUrl = config.serverUrl ?? "";
+  remoteAuthToken = config.authToken ?? "";
   writeDesktopLogHeader(`bootstrap config loaded mode=${connectionMode}`);
 
   if (connectionMode === "local") {

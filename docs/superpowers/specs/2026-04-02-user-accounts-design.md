@@ -25,23 +25,23 @@ Add user accounts to T3 Code so threads (conversations) can be assigned to users
 
 #### `users`
 
-| Column        | Type    | Constraints                    |
-|---------------|---------|--------------------------------|
+| Column        | Type    | Constraints                   |
+| ------------- | ------- | ----------------------------- |
 | id            | TEXT    | PK, UUID                      |
-| username      | TEXT    | UNIQUE, NOT NULL               |
-| display_name  | TEXT    | NOT NULL                       |
-| password_hash | TEXT    | NOT NULL                       |
-| role          | TEXT    | NOT NULL, "admin" or "member"  |
-| created_at    | INTEGER | NOT NULL, unix ms              |
+| username      | TEXT    | UNIQUE, NOT NULL              |
+| display_name  | TEXT    | NOT NULL                      |
+| password_hash | TEXT    | NOT NULL                      |
+| role          | TEXT    | NOT NULL, "admin" or "member" |
+| created_at    | INTEGER | NOT NULL, unix ms             |
 
 #### `user_sessions`
 
-| Column     | Type    | Constraints              |
-|------------|---------|--------------------------|
+| Column     | Type    | Constraints                |
+| ---------- | ------- | -------------------------- |
 | id         | TEXT    | PK, UUID (= session token) |
-| user_id    | TEXT    | FK → users.id, NOT NULL  |
-| created_at | INTEGER | NOT NULL, unix ms        |
-| expires_at | INTEGER | NOT NULL, unix ms        |
+| user_id    | TEXT    | FK → users.id, NOT NULL    |
+| created_at | INTEGER | NOT NULL, unix ms          |
+| expires_at | INTEGER | NOT NULL, unix ms          |
 
 ### Schema Changes
 
@@ -94,28 +94,28 @@ Add column: `assigned_user_id TEXT REFERENCES users(id) ON DELETE SET NULL`
 
 ### Auth
 
-| Method | Path               | Auth     | Description                     |
-|--------|--------------------|----------|---------------------------------|
-| POST   | /api/auth/login    | None     | Login, returns session cookie   |
-| POST   | /api/auth/logout   | Required | Logout, clears session          |
-| GET    | /api/auth/me       | Required | Current user info               |
-| GET    | /api/auth/setup-required | None | Returns `{ required: boolean }` |
-| POST   | /api/auth/setup    | None*    | Create admin account (only when no users exist) |
+| Method | Path                     | Auth     | Description                                     |
+| ------ | ------------------------ | -------- | ----------------------------------------------- |
+| POST   | /api/auth/login          | None     | Login, returns session cookie                   |
+| POST   | /api/auth/logout         | Required | Logout, clears session                          |
+| GET    | /api/auth/me             | Required | Current user info                               |
+| GET    | /api/auth/setup-required | None     | Returns `{ required: boolean }`                 |
+| POST   | /api/auth/setup          | None\*   | Create admin account (only when no users exist) |
 
 ### User Management (Admin)
 
-| Method | Path                | Auth  | Description        |
-|--------|---------------------|-------|--------------------|
-| GET    | /api/auth/users     | Any   | List all users     |
-| POST   | /api/auth/users     | Admin | Create a new user  |
+| Method | Path                | Auth  | Description            |
+| ------ | ------------------- | ----- | ---------------------- |
+| GET    | /api/auth/users     | Any   | List all users         |
+| POST   | /api/auth/users     | Admin | Create a new user      |
 | DELETE | /api/auth/users/:id | Admin | Delete user + sessions |
 
 ### WebSocket Methods
 
-| Method       | Description                |
-|--------------|----------------------------|
-| auth.me      | Current user over WS       |
-| users.list   | All users (for assignment) |
+| Method     | Description                |
+| ---------- | -------------------------- |
+| auth.me    | Current user over WS       |
+| users.list | All users (for assignment) |
 
 ---
 
@@ -124,14 +124,14 @@ Add column: `assigned_user_id TEXT REFERENCES users(id) ON DELETE SET NULL`
 ### New Branded Types
 
 ```typescript
-export const UserId = Schema.String.pipe(Schema.brand("UserId"))
-export type UserId = typeof UserId.Type
+export const UserId = Schema.String.pipe(Schema.brand("UserId"));
+export type UserId = typeof UserId.Type;
 ```
 
 ### New Schemas
 
 ```typescript
-export const UserRole = Schema.Literal("admin", "member")
+export const UserRole = Schema.Literal("admin", "member");
 
 export const User = Schema.Struct({
   id: UserId,
@@ -139,14 +139,14 @@ export const User = Schema.Struct({
   displayName: Schema.String,
   role: UserRole,
   createdAt: Schema.Number,
-})
+});
 
 export const AuthSession = Schema.Struct({
   id: Schema.String,
   userId: UserId,
   createdAt: Schema.Number,
   expiresAt: Schema.Number,
-})
+});
 ```
 
 ---
@@ -156,6 +156,7 @@ export const AuthSession = Schema.Struct({
 ### New: `UserService`
 
 Effect service providing:
+
 - `createUser(username, displayName, password, role)` → User
 - `validateCredentials(username, password)` → User | null
 - `createSession(userId)` → session token

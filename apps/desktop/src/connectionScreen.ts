@@ -77,7 +77,8 @@ export function connectionScreenHtml(): string {
     margin-top: 24px;
     width: 496px;
   }
-  .server-form.visible { display: flex; gap: 8px; }
+  .server-form.visible { display: flex; flex-direction: column; gap: 8px; }
+  .server-form .row { display: flex; gap: 8px; }
   .server-form input {
     flex: 1;
     padding: 10px 14px;
@@ -131,8 +132,14 @@ export function connectionScreenHtml(): string {
     </div>
   </div>
   <div class="server-form" id="server-form">
-    <input type="url" id="server-url" placeholder="https://your-server.example.com" autofocus />
-    <button class="connect-btn" id="connect-btn" onclick="connectToServer()">Connect</button>
+    <div class="row">
+      <input type="url" id="server-url" placeholder="https://your-server.example.com" autofocus />
+    </div>
+    <div class="row">
+      <input type="password" id="server-token" placeholder="Auth token (optional)" />
+      <button class="connect-btn" id="test-btn" onclick="testConnection()" style="background:transparent;border:1px solid #27272a;color:#e4e4e7;">Test</button>
+      <button class="connect-btn" id="connect-btn" onclick="connectToServer()">Connect</button>
+    </div>
   </div>
   <div class="error" id="error-msg"></div>
   <script>
@@ -141,7 +148,7 @@ export function connectionScreenHtml(): string {
       document.getElementById('card-server').classList.remove('selected');
       document.getElementById('server-form').classList.remove('visible');
       document.getElementById('error-msg').classList.remove('visible');
-      window.desktopBridge.saveConnectionConfig({ mode: 'local', serverUrl: null });
+      window.desktopBridge.saveConnectionConfig({ mode: 'local', serverUrl: null, authToken: null });
     }
     function selectServer() {
       document.getElementById('card-server').classList.add('selected');
@@ -149,18 +156,76 @@ export function connectionScreenHtml(): string {
       document.getElementById('server-form').classList.add('visible');
       document.getElementById('server-url').focus();
     }
-    function connectToServer() {
+    function getServerInputs() {
       var url = document.getElementById('server-url').value.trim();
+      var token = document.getElementById('server-token').value.trim();
+      return { url: url, token: token || null };
+    }
+    function validateUrl(url) {
+      return url.startsWith('http://') || url.startsWith('https://');
+    }
+    function testConnection() {
+      var inputs = getServerInputs();
       var errorEl = document.getElementById('error-msg');
-      if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      var testBtn = document.getElementById('test-btn');
+      if (!validateUrl(inputs.url)) {
         errorEl.textContent = 'URL must start with http:// or https://';
         errorEl.classList.add('visible');
         return;
       }
       errorEl.classList.remove('visible');
-      window.desktopBridge.saveConnectionConfig({ mode: 'server', serverUrl: url });
+      testBtn.textContent = 'Testing...';
+      testBtn.disabled = true;
+      var wsProto = inputs.url.startsWith('https://') ? 'wss://' : 'ws://';
+      var parsed = new URL(inputs.url);
+      var wsUrl = wsProto + parsed.host + '/ws';
+      if (inputs.token) wsUrl += '?token=' + encodeURIComponent(inputs.token);
+      var ws = new WebSocket(wsUrl);
+      var timeout = setTimeout(function() {
+        ws.close();
+        errorEl.textContent = 'Connection timed out';
+        errorEl.classList.add('visible');
+        testBtn.textContent = 'Test';
+        testBtn.disabled = false;
+      }, 5000);
+      ws.onopen = function() {
+        clearTimeout(timeout);
+        ws.close();
+        errorEl.textContent = '';
+        errorEl.classList.remove('visible');
+        testBtn.textContent = 'Connected!';
+        testBtn.style.borderColor = '#4ade80';
+        testBtn.style.color = '#4ade80';
+        setTimeout(function() {
+          testBtn.textContent = 'Test';
+          testBtn.style.borderColor = '';
+          testBtn.style.color = '';
+          testBtn.disabled = false;
+        }, 2000);
+      };
+      ws.onerror = function() {
+        clearTimeout(timeout);
+        errorEl.textContent = 'Connection failed — check URL and token';
+        errorEl.classList.add('visible');
+        testBtn.textContent = 'Test';
+        testBtn.disabled = false;
+      };
+    }
+    function connectToServer() {
+      var inputs = getServerInputs();
+      var errorEl = document.getElementById('error-msg');
+      if (!validateUrl(inputs.url)) {
+        errorEl.textContent = 'URL must start with http:// or https://';
+        errorEl.classList.add('visible');
+        return;
+      }
+      errorEl.classList.remove('visible');
+      window.desktopBridge.saveConnectionConfig({ mode: 'server', serverUrl: inputs.url, authToken: inputs.token });
     }
     document.getElementById('server-url').addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') document.getElementById('server-token').focus();
+    });
+    document.getElementById('server-token').addEventListener('keydown', function(e) {
       if (e.key === 'Enter') connectToServer();
     });
   </script>

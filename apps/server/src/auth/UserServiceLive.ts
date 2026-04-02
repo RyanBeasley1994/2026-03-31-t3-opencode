@@ -44,34 +44,41 @@ const makeUserService = Effect.gen(function* () {
 
   const setup: UserServiceShape["setup"] = (input) =>
     Effect.gen(function* () {
-      const count = yield* userRepo.count().pipe(
-        Effect.mapError(mapRepoError("not_found", "Failed to query users")),
-      );
+      const count = yield* userRepo
+        .count()
+        .pipe(Effect.mapError(mapRepoError("not_found", "Failed to query users")));
       if (count > 0) {
-        return yield* new AuthError({ reason: "setup_already_done", message: "Admin account already exists" });
+        return yield* new AuthError({
+          reason: "setup_already_done",
+          message: "Admin account already exists",
+        });
       }
 
       const userId = generateId() as UserId;
       const now = new Date().toISOString();
       const passwordHash = yield* Effect.promise(() => hash(input.password));
 
-      yield* userRepo.upsert({
-        userId,
-        username: input.username,
-        displayName: input.displayName,
-        passwordHash,
-        role: "admin",
-        createdAt: now,
-      }).pipe(Effect.mapError(mapRepoError("not_found", "Failed to create user")));
+      yield* userRepo
+        .upsert({
+          userId,
+          username: input.username,
+          displayName: input.displayName,
+          passwordHash,
+          role: "admin",
+          createdAt: now,
+        })
+        .pipe(Effect.mapError(mapRepoError("not_found", "Failed to create user")));
 
       const sessionId = generateId();
       const expiresAt = new Date(Date.now() + SESSION_TTL_MS).toISOString();
-      yield* sessionRepo.create({
-        sessionId: sessionId as any,
-        userId,
-        createdAt: now,
-        expiresAt,
-      }).pipe(Effect.mapError(mapRepoError("not_found", "Failed to create session")));
+      yield* sessionRepo
+        .create({
+          sessionId: sessionId as any,
+          userId,
+          createdAt: now,
+          expiresAt,
+        })
+        .pipe(Effect.mapError(mapRepoError("not_found", "Failed to create session")));
 
       return {
         user: toPublicUser({
@@ -87,28 +94,36 @@ const makeUserService = Effect.gen(function* () {
 
   const login: UserServiceShape["login"] = (input) =>
     Effect.gen(function* () {
-      const maybeUser = yield* userRepo.getByUsername({ username: input.username }).pipe(
-        Effect.mapError(mapRepoError("invalid_credentials", "Failed to query user")),
-      );
+      const maybeUser = yield* userRepo
+        .getByUsername({ username: input.username })
+        .pipe(Effect.mapError(mapRepoError("invalid_credentials", "Failed to query user")));
       if (Option.isNone(maybeUser)) {
-        return yield* new AuthError({ reason: "invalid_credentials", message: "Invalid username or password" });
+        return yield* new AuthError({
+          reason: "invalid_credentials",
+          message: "Invalid username or password",
+        });
       }
       const user = maybeUser.value;
 
       const valid: boolean = yield* Effect.promise(() => verify(user.passwordHash, input.password));
       if (!valid) {
-        return yield* new AuthError({ reason: "invalid_credentials", message: "Invalid username or password" });
+        return yield* new AuthError({
+          reason: "invalid_credentials",
+          message: "Invalid username or password",
+        });
       }
 
       const sessionId = generateId();
       const now = new Date().toISOString();
       const expiresAt = new Date(Date.now() + SESSION_TTL_MS).toISOString();
-      yield* sessionRepo.create({
-        sessionId: sessionId as any,
-        userId: user.userId,
-        createdAt: now,
-        expiresAt,
-      }).pipe(Effect.mapError(mapRepoError("not_found", "Failed to create session")));
+      yield* sessionRepo
+        .create({
+          sessionId: sessionId as any,
+          userId: user.userId,
+          createdAt: now,
+          expiresAt,
+        })
+        .pipe(Effect.mapError(mapRepoError("not_found", "Failed to create session")));
 
       yield* sessionRepo.deleteExpired().pipe(Effect.ignore({ log: true }));
 
@@ -116,26 +131,30 @@ const makeUserService = Effect.gen(function* () {
     });
 
   const logout: UserServiceShape["logout"] = (sessionId) =>
-    sessionRepo.deleteById({ sessionId: sessionId as any }).pipe(
-      Effect.mapError(() => new AuthError({ reason: "not_found", message: "Session not found" })),
-    );
+    sessionRepo
+      .deleteById({ sessionId: sessionId as any })
+      .pipe(
+        Effect.mapError(() => new AuthError({ reason: "not_found", message: "Session not found" })),
+      );
 
   const validateSession: UserServiceShape["validateSession"] = (sessionId) =>
     Effect.gen(function* () {
-      const maybeSession = yield* sessionRepo.getById({ sessionId: sessionId as any }).pipe(
-        Effect.orElseSucceed(() => Option.none()),
-      );
+      const maybeSession = yield* sessionRepo
+        .getById({ sessionId: sessionId as any })
+        .pipe(Effect.orElseSucceed(() => Option.none()));
       if (Option.isNone(maybeSession)) return Option.none();
 
       const session = maybeSession.value;
       if (new Date(session.expiresAt) < new Date()) {
-        yield* sessionRepo.deleteById({ sessionId: sessionId as any }).pipe(Effect.ignore({ log: true }));
+        yield* sessionRepo
+          .deleteById({ sessionId: sessionId as any })
+          .pipe(Effect.ignore({ log: true }));
         return Option.none();
       }
 
-      const maybeUser = yield* userRepo.getById({ userId: session.userId }).pipe(
-        Effect.orElseSucceed(() => Option.none()),
-      );
+      const maybeUser = yield* userRepo
+        .getById({ userId: session.userId })
+        .pipe(Effect.orElseSucceed(() => Option.none()));
       if (Option.isNone(maybeUser)) return Option.none();
 
       return Option.some(toPublicUser(maybeUser.value));
@@ -150,12 +169,15 @@ const makeUserService = Effect.gen(function* () {
   const createUser: UserServiceShape["createUser"] = (input) =>
     Effect.gen(function* () {
       if (input.callerRole !== "admin") {
-        return yield* new AuthError({ reason: "not_admin", message: "Only admins can create users" });
+        return yield* new AuthError({
+          reason: "not_admin",
+          message: "Only admins can create users",
+        });
       }
 
-      const existing = yield* userRepo.getByUsername({ username: input.username }).pipe(
-        Effect.mapError(mapRepoError("not_found", "Failed to query user")),
-      );
+      const existing = yield* userRepo
+        .getByUsername({ username: input.username })
+        .pipe(Effect.mapError(mapRepoError("not_found", "Failed to query user")));
       if (Option.isSome(existing)) {
         return yield* new AuthError({ reason: "user_exists", message: "Username already taken" });
       }
@@ -164,14 +186,16 @@ const makeUserService = Effect.gen(function* () {
       const now = new Date().toISOString();
       const passwordHash = yield* Effect.promise(() => hash(input.password));
 
-      yield* userRepo.upsert({
-        userId,
-        username: input.username,
-        displayName: input.displayName,
-        passwordHash,
-        role: input.role,
-        createdAt: now,
-      }).pipe(Effect.mapError(mapRepoError("not_found", "Failed to create user")));
+      yield* userRepo
+        .upsert({
+          userId,
+          username: input.username,
+          displayName: input.displayName,
+          passwordHash,
+          role: input.role,
+          createdAt: now,
+        })
+        .pipe(Effect.mapError(mapRepoError("not_found", "Failed to create user")));
 
       return toPublicUser({
         userId: userId as string,
@@ -185,15 +209,18 @@ const makeUserService = Effect.gen(function* () {
   const deleteUser: UserServiceShape["deleteUser"] = (input) =>
     Effect.gen(function* () {
       if (input.callerRole !== "admin") {
-        return yield* new AuthError({ reason: "not_admin", message: "Only admins can delete users" });
+        return yield* new AuthError({
+          reason: "not_admin",
+          message: "Only admins can delete users",
+        });
       }
 
-      yield* sessionRepo.deleteByUserId({ userId: input.userId }).pipe(
-        Effect.mapError(mapRepoError("not_found", "Failed to delete user sessions")),
-      );
-      yield* userRepo.deleteById({ userId: input.userId }).pipe(
-        Effect.mapError(mapRepoError("not_found", "Failed to delete user")),
-      );
+      yield* sessionRepo
+        .deleteByUserId({ userId: input.userId })
+        .pipe(Effect.mapError(mapRepoError("not_found", "Failed to delete user sessions")));
+      yield* userRepo
+        .deleteById({ userId: input.userId })
+        .pipe(Effect.mapError(mapRepoError("not_found", "Failed to delete user")));
     });
 
   return {

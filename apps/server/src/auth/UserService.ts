@@ -2,19 +2,16 @@ import { Schema, ServiceMap } from "effect";
 import type { Effect, Option } from "effect";
 import type { User, UserId } from "@t3tools/contracts";
 
-export class AuthError extends Schema.TaggedErrorClass<AuthError>()(
-  "AuthError",
-  {
-    reason: Schema.Literals([
-      "invalid_credentials",
-      "user_exists",
-      "not_found",
-      "not_admin",
-      "setup_already_done",
-    ] as const),
-    message: Schema.String,
-  },
-) {}
+export class AuthError extends Schema.TaggedErrorClass<AuthError>()("AuthError", {
+  reason: Schema.Literals([
+    "invalid_credentials",
+    "user_exists",
+    "not_found",
+    "not_admin",
+    "setup_already_done",
+  ] as const),
+  message: Schema.String,
+}) {}
 
 export interface UserServiceShape {
   readonly setup: (input: {
@@ -50,7 +47,6 @@ export interface UserServiceShape {
   }) => Effect.Effect<void, AuthError>;
 }
 
-export class UserService extends ServiceMap.Service<
-  UserService,
-  UserServiceShape
->()("t3/auth/UserService") {}
+export class UserService extends ServiceMap.Service<UserService, UserServiceShape>()(
+  "t3/auth/UserService",
+) {}

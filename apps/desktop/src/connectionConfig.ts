@@ -4,6 +4,7 @@ import * as Path from "node:path";
 export interface ConnectionConfig {
   mode: "local" | "server";
   serverUrl: string | null;
+  authToken: string | null;
 }
 
 const CONFIG_FILENAME = "connection.json";
@@ -28,6 +29,10 @@ export function readConnectionConfig(stateDir: string): ConnectionConfig | null 
     return {
       mode: parsed.mode,
       serverUrl: parsed.mode === "server" ? (parsed.serverUrl as string) : null,
+      authToken:
+        parsed.mode === "server" && typeof parsed.authToken === "string"
+          ? (parsed.authToken as string)
+          : null,
     };
   } catch {
     return null;
@@ -38,4 +43,13 @@ export function writeConnectionConfig(stateDir: string, config: ConnectionConfig
   const filePath = configPath(stateDir);
   FS.mkdirSync(Path.dirname(filePath), { recursive: true });
   FS.writeFileSync(filePath, JSON.stringify(config, null, 2), "utf-8");
+}
+
+export function deleteConnectionConfig(stateDir: string): void {
+  const filePath = configPath(stateDir);
+  try {
+    FS.unlinkSync(filePath);
+  } catch {
+    // Already gone — nothing to do
+  }
 }

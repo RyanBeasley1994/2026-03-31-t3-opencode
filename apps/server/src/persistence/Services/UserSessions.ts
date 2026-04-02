@@ -22,9 +22,15 @@ export type DeleteUserSessionsInput = typeof DeleteUserSessionsInput.Type;
 
 export interface UserSessionRepositoryShape {
   readonly create: (row: UserSession) => Effect.Effect<void, ProjectionRepositoryError>;
-  readonly getById: (input: GetSessionInput) => Effect.Effect<Option.Option<UserSession>, ProjectionRepositoryError>;
-  readonly deleteById: (input: DeleteSessionInput) => Effect.Effect<void, ProjectionRepositoryError>;
-  readonly deleteByUserId: (input: DeleteUserSessionsInput) => Effect.Effect<void, ProjectionRepositoryError>;
+  readonly getById: (
+    input: GetSessionInput,
+  ) => Effect.Effect<Option.Option<UserSession>, ProjectionRepositoryError>;
+  readonly deleteById: (
+    input: DeleteSessionInput,
+  ) => Effect.Effect<void, ProjectionRepositoryError>;
+  readonly deleteByUserId: (
+    input: DeleteUserSessionsInput,
+  ) => Effect.Effect<void, ProjectionRepositoryError>;
   readonly deleteExpired: () => Effect.Effect<void, ProjectionRepositoryError>;
 }
 

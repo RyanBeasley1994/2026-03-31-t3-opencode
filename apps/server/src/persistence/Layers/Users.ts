@@ -81,7 +81,9 @@ const makeUserRepository = Effect.gen(function* () {
     getByIdRow(input).pipe(Effect.mapError(toPersistenceSqlError("UserRepository.getById")));
 
   const getByUsername: UserRepositoryShape["getByUsername"] = (input) =>
-    getByUsernameRow(input).pipe(Effect.mapError(toPersistenceSqlError("UserRepository.getByUsername")));
+    getByUsernameRow(input).pipe(
+      Effect.mapError(toPersistenceSqlError("UserRepository.getByUsername")),
+    );
 
   const listAll: UserRepositoryShape["listAll"] = () =>
     listAllRows().pipe(Effect.mapError(toPersistenceSqlError("UserRepository.listAll")));
@@ -95,7 +97,14 @@ const makeUserRepository = Effect.gen(function* () {
   const deleteById: UserRepositoryShape["deleteById"] = (input) =>
     deleteRow(input).pipe(Effect.mapError(toPersistenceSqlError("UserRepository.deleteById")));
 
-  return { upsert, getById, getByUsername, listAll, count, deleteById } satisfies UserRepositoryShape;
+  return {
+    upsert,
+    getById,
+    getByUsername,
+    listAll,
+    count,
+    deleteById,
+  } satisfies UserRepositoryShape;
 });
 
 export const UserRepositoryLive = Layer.effect(UserRepository, makeUserRepository);

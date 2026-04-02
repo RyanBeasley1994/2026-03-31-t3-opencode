@@ -14,56 +14,57 @@
 
 ### New Files
 
-| File | Responsibility |
-|------|---------------|
-| `packages/contracts/src/auth.ts` | User/session schemas, auth WS methods, auth HTTP types |
-| `apps/server/src/persistence/Migrations/020_Users.ts` | Users + user_sessions tables |
-| `apps/server/src/persistence/Migrations/021_ThreadAssignment.ts` | Add `assigned_user_id` to `projection_threads` |
-| `apps/server/src/persistence/Services/Users.ts` | UserRepository service interface |
-| `apps/server/src/persistence/Services/UserSessions.ts` | UserSessionRepository service interface |
-| `apps/server/src/persistence/Layers/Users.ts` | UserRepository SQLite implementation |
-| `apps/server/src/persistence/Layers/UserSessions.ts` | UserSessionRepository SQLite implementation |
-| `apps/server/src/auth/UserService.ts` | UserService Effect service (hashing, login, session validation) |
-| `apps/server/src/auth/UserServiceLive.ts` | UserService live layer implementation |
-| `apps/web/src/lib/authApi.ts` | Auth HTTP client functions (login, logout, me, setup, users) |
-| `apps/web/src/authStore.ts` | Zustand auth state (currentUser, isAuthenticated) |
-| `apps/web/src/routes/login.tsx` | Login page route |
-| `apps/web/src/routes/setup.tsx` | First-run admin setup route |
-| `apps/web/src/routes/settings.users.tsx` | User management settings page |
-| `apps/web/src/components/auth/LoginForm.tsx` | Login form component |
-| `apps/web/src/components/auth/SetupForm.tsx` | Admin setup form component |
-| `apps/web/src/components/auth/AuthGuard.tsx` | Auth gate wrapper for root route |
-| `apps/web/src/components/settings/UsersPanel.tsx` | Admin user management panel |
-| `apps/web/src/components/ThreadAssignmentDropdown.tsx` | Thread assignment dropdown |
+| File                                                             | Responsibility                                                  |
+| ---------------------------------------------------------------- | --------------------------------------------------------------- |
+| `packages/contracts/src/auth.ts`                                 | User/session schemas, auth WS methods, auth HTTP types          |
+| `apps/server/src/persistence/Migrations/020_Users.ts`            | Users + user_sessions tables                                    |
+| `apps/server/src/persistence/Migrations/021_ThreadAssignment.ts` | Add `assigned_user_id` to `projection_threads`                  |
+| `apps/server/src/persistence/Services/Users.ts`                  | UserRepository service interface                                |
+| `apps/server/src/persistence/Services/UserSessions.ts`           | UserSessionRepository service interface                         |
+| `apps/server/src/persistence/Layers/Users.ts`                    | UserRepository SQLite implementation                            |
+| `apps/server/src/persistence/Layers/UserSessions.ts`             | UserSessionRepository SQLite implementation                     |
+| `apps/server/src/auth/UserService.ts`                            | UserService Effect service (hashing, login, session validation) |
+| `apps/server/src/auth/UserServiceLive.ts`                        | UserService live layer implementation                           |
+| `apps/web/src/lib/authApi.ts`                                    | Auth HTTP client functions (login, logout, me, setup, users)    |
+| `apps/web/src/authStore.ts`                                      | Zustand auth state (currentUser, isAuthenticated)               |
+| `apps/web/src/routes/login.tsx`                                  | Login page route                                                |
+| `apps/web/src/routes/setup.tsx`                                  | First-run admin setup route                                     |
+| `apps/web/src/routes/settings.users.tsx`                         | User management settings page                                   |
+| `apps/web/src/components/auth/LoginForm.tsx`                     | Login form component                                            |
+| `apps/web/src/components/auth/SetupForm.tsx`                     | Admin setup form component                                      |
+| `apps/web/src/components/auth/AuthGuard.tsx`                     | Auth gate wrapper for root route                                |
+| `apps/web/src/components/settings/UsersPanel.tsx`                | Admin user management panel                                     |
+| `apps/web/src/components/ThreadAssignmentDropdown.tsx`           | Thread assignment dropdown                                      |
 
 ### Modified Files
 
-| File | Changes |
-|------|---------|
-| `packages/contracts/src/baseSchemas.ts` | Add `UserId` branded type |
-| `packages/contracts/src/index.ts` | Re-export auth module |
-| `packages/contracts/src/ws.ts` | Add auth WS methods + request bodies |
-| `packages/contracts/src/orchestration.ts` | Add `assignedUserId` to `OrchestrationThread` |
-| `apps/server/src/persistence/Migrations.ts` | Register migrations 020, 021 |
-| `apps/server/src/persistence/Services/ProjectionThreads.ts` | Add `assignedUserId` field |
-| `apps/server/src/persistence/Layers/ProjectionThreads.ts` | Include `assigned_user_id` in SQL queries |
-| `apps/server/src/config.ts` | Remove `webUiAuth` (replaced by app-level auth) |
-| `apps/server/src/serverLayers.ts` | Wire UserService + repositories into layer tree |
-| `apps/server/src/wsServer.ts` | Cookie auth, HTTP auth endpoints, WS auth methods, remove basic auth |
-| `apps/server/package.json` | Add `@node-rs/argon2` dependency |
-| `apps/web/src/routes/__root.tsx` | Wrap with AuthGuard |
-| `apps/web/src/store.ts` | Add `assignedUserId` to thread mapping |
-| `apps/web/src/types.ts` | Add `assignedUserId` to Thread interface |
-| `apps/web/src/components/Sidebar.tsx` | Thread filter by user, user badge on threads |
-| `apps/web/src/components/chat/ChatHeader.tsx` | Thread assignment dropdown |
-| `apps/web/src/components/settings/SettingsSidebarNav.tsx` | Add "Users" nav item |
-| `docker-compose.yml` | Remove basic auth env vars, simplify nginx config |
+| File                                                        | Changes                                                              |
+| ----------------------------------------------------------- | -------------------------------------------------------------------- |
+| `packages/contracts/src/baseSchemas.ts`                     | Add `UserId` branded type                                            |
+| `packages/contracts/src/index.ts`                           | Re-export auth module                                                |
+| `packages/contracts/src/ws.ts`                              | Add auth WS methods + request bodies                                 |
+| `packages/contracts/src/orchestration.ts`                   | Add `assignedUserId` to `OrchestrationThread`                        |
+| `apps/server/src/persistence/Migrations.ts`                 | Register migrations 020, 021                                         |
+| `apps/server/src/persistence/Services/ProjectionThreads.ts` | Add `assignedUserId` field                                           |
+| `apps/server/src/persistence/Layers/ProjectionThreads.ts`   | Include `assigned_user_id` in SQL queries                            |
+| `apps/server/src/config.ts`                                 | Remove `webUiAuth` (replaced by app-level auth)                      |
+| `apps/server/src/serverLayers.ts`                           | Wire UserService + repositories into layer tree                      |
+| `apps/server/src/wsServer.ts`                               | Cookie auth, HTTP auth endpoints, WS auth methods, remove basic auth |
+| `apps/server/package.json`                                  | Add `@node-rs/argon2` dependency                                     |
+| `apps/web/src/routes/__root.tsx`                            | Wrap with AuthGuard                                                  |
+| `apps/web/src/store.ts`                                     | Add `assignedUserId` to thread mapping                               |
+| `apps/web/src/types.ts`                                     | Add `assignedUserId` to Thread interface                             |
+| `apps/web/src/components/Sidebar.tsx`                       | Thread filter by user, user badge on threads                         |
+| `apps/web/src/components/chat/ChatHeader.tsx`               | Thread assignment dropdown                                           |
+| `apps/web/src/components/settings/SettingsSidebarNav.tsx`   | Add "Users" nav item                                                 |
+| `docker-compose.yml`                                        | Remove basic auth env vars, simplify nginx config                    |
 
 ---
 
 ## Task 1: Add UserId to Contracts
 
 **Files:**
+
 - Modify: `packages/contracts/src/baseSchemas.ts:44`
 - Create: `packages/contracts/src/auth.ts`
 - Modify: `packages/contracts/src/index.ts`
@@ -162,6 +163,7 @@ git commit -m "feat(contracts): add UserId branded type and auth schemas"
 ## Task 2: Database Migrations
 
 **Files:**
+
 - Create: `apps/server/src/persistence/Migrations/020_Users.ts`
 - Create: `apps/server/src/persistence/Migrations/021_ThreadAssignment.ts`
 - Modify: `apps/server/src/persistence/Migrations.ts`
@@ -265,6 +267,7 @@ git commit -m "feat(server): add users and thread assignment database migrations
 ## Task 3: User Repository Service & Layer
 
 **Files:**
+
 - Create: `apps/server/src/persistence/Services/Users.ts`
 - Create: `apps/server/src/persistence/Layers/Users.ts`
 
@@ -282,16 +285,11 @@ import { UserRepositoryLive } from "./Users.ts";
 import { SqlitePersistenceMemory } from "./Sqlite.ts";
 import { runMigrations } from "../Migrations.ts";
 
-const TestLayer = UserRepositoryLive.pipe(
-  Effect.provideLayer(SqlitePersistenceMemory),
-);
+const TestLayer = UserRepositoryLive.pipe(Effect.provideLayer(SqlitePersistenceMemory));
 
 const runTest = <A, E>(effect: Effect.Effect<A, E, UserRepository | SqlClient.SqlClient>) =>
   Effect.runPromise(
-    effect.pipe(
-      Effect.provide(UserRepositoryLive),
-      Effect.provide(SqlitePersistenceMemory),
-    ),
+    effect.pipe(Effect.provide(UserRepositoryLive), Effect.provide(SqlitePersistenceMemory)),
   );
 
 describe("UserRepository", () => {
@@ -432,17 +430,20 @@ export type DeleteUserInput = typeof DeleteUserInput.Type;
 
 export interface UserRepositoryShape {
   readonly upsert: (row: ProjectionUser) => Effect.Effect<void, ProjectionRepositoryError>;
-  readonly getById: (input: GetUserInput) => Effect.Effect<Option.Option<ProjectionUser>, ProjectionRepositoryError>;
-  readonly getByUsername: (input: GetUserByUsernameInput) => Effect.Effect<Option.Option<ProjectionUser>, ProjectionRepositoryError>;
+  readonly getById: (
+    input: GetUserInput,
+  ) => Effect.Effect<Option.Option<ProjectionUser>, ProjectionRepositoryError>;
+  readonly getByUsername: (
+    input: GetUserByUsernameInput,
+  ) => Effect.Effect<Option.Option<ProjectionUser>, ProjectionRepositoryError>;
   readonly listAll: () => Effect.Effect<ReadonlyArray<ProjectionUser>, ProjectionRepositoryError>;
   readonly count: () => Effect.Effect<number, ProjectionRepositoryError>;
   readonly deleteById: (input: DeleteUserInput) => Effect.Effect<void, ProjectionRepositoryError>;
 }
 
-export class UserRepository extends ServiceMap.Service<
-  UserRepository,
-  UserRepositoryShape
->()("t3/persistence/Services/Users/UserRepository") {}
+export class UserRepository extends ServiceMap.Service<UserRepository, UserRepositoryShape>()(
+  "t3/persistence/Services/Users/UserRepository",
+) {}
 ```
 
 - [ ] **Step 3: Create UserRepository live layer**
@@ -533,7 +534,9 @@ const makeUserRepository = Effect.gen(function* () {
     getByIdRow(input).pipe(Effect.mapError(toPersistenceSqlError("UserRepository.getById")));
 
   const getByUsername: UserRepositoryShape["getByUsername"] = (input) =>
-    getByUsernameRow(input).pipe(Effect.mapError(toPersistenceSqlError("UserRepository.getByUsername")));
+    getByUsernameRow(input).pipe(
+      Effect.mapError(toPersistenceSqlError("UserRepository.getByUsername")),
+    );
 
   const listAll: UserRepositoryShape["listAll"] = () =>
     listAllRows().pipe(Effect.mapError(toPersistenceSqlError("UserRepository.listAll")));
@@ -547,7 +550,14 @@ const makeUserRepository = Effect.gen(function* () {
   const deleteById: UserRepositoryShape["deleteById"] = (input) =>
     deleteRow(input).pipe(Effect.mapError(toPersistenceSqlError("UserRepository.deleteById")));
 
-  return { upsert, getById, getByUsername, listAll, count, deleteById } satisfies UserRepositoryShape;
+  return {
+    upsert,
+    getById,
+    getByUsername,
+    listAll,
+    count,
+    deleteById,
+  } satisfies UserRepositoryShape;
 });
 
 export const UserRepositoryLive = Layer.effect(UserRepository, makeUserRepository);
@@ -570,6 +580,7 @@ git commit -m "feat(server): add UserRepository service and SQLite layer"
 ## Task 4: User Session Repository Service & Layer
 
 **Files:**
+
 - Create: `apps/server/src/persistence/Services/UserSessions.ts`
 - Create: `apps/server/src/persistence/Layers/UserSessions.ts`
 
@@ -602,9 +613,15 @@ export type DeleteUserSessionsInput = typeof DeleteUserSessionsInput.Type;
 
 export interface UserSessionRepositoryShape {
   readonly create: (row: UserSession) => Effect.Effect<void, ProjectionRepositoryError>;
-  readonly getById: (input: GetSessionInput) => Effect.Effect<Option.Option<UserSession>, ProjectionRepositoryError>;
-  readonly deleteById: (input: DeleteSessionInput) => Effect.Effect<void, ProjectionRepositoryError>;
-  readonly deleteByUserId: (input: DeleteUserSessionsInput) => Effect.Effect<void, ProjectionRepositoryError>;
+  readonly getById: (
+    input: GetSessionInput,
+  ) => Effect.Effect<Option.Option<UserSession>, ProjectionRepositoryError>;
+  readonly deleteById: (
+    input: DeleteSessionInput,
+  ) => Effect.Effect<void, ProjectionRepositoryError>;
+  readonly deleteByUserId: (
+    input: DeleteUserSessionsInput,
+  ) => Effect.Effect<void, ProjectionRepositoryError>;
   readonly deleteExpired: () => Effect.Effect<void, ProjectionRepositoryError>;
 }
 
@@ -659,20 +676,17 @@ const makeUserSessionRepository = Effect.gen(function* () {
 
   const deleteByIdRow = SqlSchema.void({
     Request: DeleteSessionInput,
-    execute: ({ sessionId }) =>
-      sql`DELETE FROM user_sessions WHERE session_id = ${sessionId}`,
+    execute: ({ sessionId }) => sql`DELETE FROM user_sessions WHERE session_id = ${sessionId}`,
   });
 
   const deleteByUserIdRow = SqlSchema.void({
     Request: DeleteUserSessionsInput,
-    execute: ({ userId }) =>
-      sql`DELETE FROM user_sessions WHERE user_id = ${userId}`,
+    execute: ({ userId }) => sql`DELETE FROM user_sessions WHERE user_id = ${userId}`,
   });
 
   const deleteExpiredRow = SqlSchema.void({
     Request: Schema.Void,
-    execute: () =>
-      sql`DELETE FROM user_sessions WHERE expires_at < ${new Date().toISOString()}`,
+    execute: () => sql`DELETE FROM user_sessions WHERE expires_at < ${new Date().toISOString()}`,
   });
 
   const create: UserSessionRepositoryShape["create"] = (row) =>
@@ -682,18 +696,33 @@ const makeUserSessionRepository = Effect.gen(function* () {
     getByIdRow(input).pipe(Effect.mapError(toPersistenceSqlError("UserSessionRepository.getById")));
 
   const deleteById: UserSessionRepositoryShape["deleteById"] = (input) =>
-    deleteByIdRow(input).pipe(Effect.mapError(toPersistenceSqlError("UserSessionRepository.deleteById")));
+    deleteByIdRow(input).pipe(
+      Effect.mapError(toPersistenceSqlError("UserSessionRepository.deleteById")),
+    );
 
   const deleteByUserId: UserSessionRepositoryShape["deleteByUserId"] = (input) =>
-    deleteByUserIdRow(input).pipe(Effect.mapError(toPersistenceSqlError("UserSessionRepository.deleteByUserId")));
+    deleteByUserIdRow(input).pipe(
+      Effect.mapError(toPersistenceSqlError("UserSessionRepository.deleteByUserId")),
+    );
 
   const deleteExpired: UserSessionRepositoryShape["deleteExpired"] = () =>
-    deleteExpiredRow().pipe(Effect.mapError(toPersistenceSqlError("UserSessionRepository.deleteExpired")));
+    deleteExpiredRow().pipe(
+      Effect.mapError(toPersistenceSqlError("UserSessionRepository.deleteExpired")),
+    );
 
-  return { create, getById, deleteById, deleteByUserId, deleteExpired } satisfies UserSessionRepositoryShape;
+  return {
+    create,
+    getById,
+    deleteById,
+    deleteByUserId,
+    deleteExpired,
+  } satisfies UserSessionRepositoryShape;
 });
 
-export const UserSessionRepositoryLive = Layer.effect(UserSessionRepository, makeUserSessionRepository);
+export const UserSessionRepositoryLive = Layer.effect(
+  UserSessionRepository,
+  makeUserSessionRepository,
+);
 ```
 
 - [ ] **Step 3: Run typecheck**
@@ -713,6 +742,7 @@ git commit -m "feat(server): add UserSessionRepository service and SQLite layer"
 ## Task 5: UserService (Auth Business Logic)
 
 **Files:**
+
 - Create: `apps/server/src/auth/UserService.ts`
 - Create: `apps/server/src/auth/UserServiceLive.ts`
 - Modify: `apps/server/package.json`
@@ -730,19 +760,16 @@ import { Schema, ServiceMap } from "effect";
 import type { Effect, Option } from "effect";
 import type { User, UserId } from "@t3tools/contracts";
 
-export class AuthError extends Schema.TaggedErrorClass<AuthError>()(
-  "AuthError",
-  {
-    reason: Schema.Literal(
-      "invalid_credentials",
-      "user_exists",
-      "not_found",
-      "not_admin",
-      "setup_already_done",
-    ),
-    message: Schema.String,
-  },
-) {}
+export class AuthError extends Schema.TaggedErrorClass<AuthError>()("AuthError", {
+  reason: Schema.Literal(
+    "invalid_credentials",
+    "user_exists",
+    "not_found",
+    "not_admin",
+    "setup_already_done",
+  ),
+  message: Schema.String,
+}) {}
 
 export interface UserServiceShape {
   readonly setup: (input: {
@@ -778,10 +805,9 @@ export interface UserServiceShape {
   }) => Effect.Effect<void, AuthError>;
 }
 
-export class UserService extends ServiceMap.Service<
-  UserService,
-  UserServiceShape
->()("t3/auth/UserService") {}
+export class UserService extends ServiceMap.Service<UserService, UserServiceShape>()(
+  "t3/auth/UserService",
+) {}
 ```
 
 - [ ] **Step 3: Create UserService live layer**
@@ -833,7 +859,10 @@ const makeUserService = Effect.gen(function* () {
     Effect.gen(function* () {
       const count = yield* userRepo.count();
       if (count > 0) {
-        return yield* new AuthError({ reason: "setup_already_done", message: "Admin account already exists" });
+        return yield* new AuthError({
+          reason: "setup_already_done",
+          message: "Admin account already exists",
+        });
       }
 
       const userId = generateId() as UserId;
@@ -874,13 +903,19 @@ const makeUserService = Effect.gen(function* () {
     Effect.gen(function* () {
       const maybeUser = yield* userRepo.getByUsername({ username: input.username });
       if (Option.isNone(maybeUser)) {
-        return yield* new AuthError({ reason: "invalid_credentials", message: "Invalid username or password" });
+        return yield* new AuthError({
+          reason: "invalid_credentials",
+          message: "Invalid username or password",
+        });
       }
       const user = maybeUser.value;
 
       const valid = yield* Effect.promise(() => verify(user.passwordHash, input.password));
       if (!valid) {
-        return yield* new AuthError({ reason: "invalid_credentials", message: "Invalid username or password" });
+        return yield* new AuthError({
+          reason: "invalid_credentials",
+          message: "Invalid username or password",
+        });
       }
 
       const sessionId = generateId();
@@ -900,15 +935,17 @@ const makeUserService = Effect.gen(function* () {
     });
 
   const logout: UserServiceShape["logout"] = (sessionId) =>
-    sessionRepo.deleteById({ sessionId: sessionId as any }).pipe(
-      Effect.mapError(() => new AuthError({ reason: "not_found", message: "Session not found" })),
-    );
+    sessionRepo
+      .deleteById({ sessionId: sessionId as any })
+      .pipe(
+        Effect.mapError(() => new AuthError({ reason: "not_found", message: "Session not found" })),
+      );
 
   const validateSession: UserServiceShape["validateSession"] = (sessionId) =>
     Effect.gen(function* () {
-      const maybeSession = yield* sessionRepo.getById({ sessionId: sessionId as any }).pipe(
-        Effect.orElseSucceed(() => Option.none()),
-      );
+      const maybeSession = yield* sessionRepo
+        .getById({ sessionId: sessionId as any })
+        .pipe(Effect.orElseSucceed(() => Option.none()));
       if (Option.isNone(maybeSession)) return Option.none();
 
       const session = maybeSession.value;
@@ -917,9 +954,9 @@ const makeUserService = Effect.gen(function* () {
         return Option.none();
       }
 
-      const maybeUser = yield* userRepo.getById({ userId: session.userId }).pipe(
-        Effect.orElseSucceed(() => Option.none()),
-      );
+      const maybeUser = yield* userRepo
+        .getById({ userId: session.userId })
+        .pipe(Effect.orElseSucceed(() => Option.none()));
       if (Option.isNone(maybeUser)) return Option.none();
 
       return Option.some(toPublicUser(maybeUser.value));
@@ -934,7 +971,10 @@ const makeUserService = Effect.gen(function* () {
   const createUser: UserServiceShape["createUser"] = (input) =>
     Effect.gen(function* () {
       if (input.callerRole !== "admin") {
-        return yield* new AuthError({ reason: "not_admin", message: "Only admins can create users" });
+        return yield* new AuthError({
+          reason: "not_admin",
+          message: "Only admins can create users",
+        });
       }
 
       const existing = yield* userRepo.getByUsername({ username: input.username });
@@ -967,7 +1007,10 @@ const makeUserService = Effect.gen(function* () {
   const deleteUser: UserServiceShape["deleteUser"] = (input) =>
     Effect.gen(function* () {
       if (input.callerRole !== "admin") {
-        return yield* new AuthError({ reason: "not_admin", message: "Only admins can delete users" });
+        return yield* new AuthError({
+          reason: "not_admin",
+          message: "Only admins can delete users",
+        });
       }
 
       yield* sessionRepo.deleteByUserId({ userId: input.userId });
@@ -1006,6 +1049,7 @@ git commit -m "feat(server): add UserService with argon2 password hashing and se
 ## Task 6: Wire Auth into Server Layers
 
 **Files:**
+
 - Modify: `apps/server/src/serverLayers.ts`
 - Modify: `apps/server/src/wsServer.ts` (ServerRuntimeServices type)
 
@@ -1047,18 +1091,18 @@ import { UserServiceLive } from "./auth/UserServiceLive.ts";
 In `makeServerRuntimeServicesLayer()`, add the user service layer after the `githubAutomationLayer` definition (before the final return):
 
 ```typescript
-  const userServiceLayer = UserServiceLive.pipe(
-    Layer.provide(UserRepositoryLive),
-    Layer.provide(UserSessionRepositoryLive),
-  );
+const userServiceLayer = UserServiceLive.pipe(
+  Layer.provide(UserRepositoryLive),
+  Layer.provide(UserSessionRepositoryLive),
+);
 ```
 
 Update the final return to include it:
 
 ```typescript
-  return Layer.mergeAll(baseRuntimeLayer, githubAutomationLayer, userServiceLayer).pipe(
-    Layer.provideMerge(NodeServices.layer),
-  );
+return Layer.mergeAll(baseRuntimeLayer, githubAutomationLayer, userServiceLayer).pipe(
+  Layer.provideMerge(NodeServices.layer),
+);
 ```
 
 - [ ] **Step 3: Run typecheck**
@@ -1078,6 +1122,7 @@ git commit -m "feat(server): wire UserService into server runtime layer tree"
 ## Task 7: HTTP Auth Endpoints & Cookie Auth in wsServer
 
 **Files:**
+
 - Modify: `apps/server/src/wsServer.ts`
 
 This is the largest task. It adds HTTP auth routes and replaces basic auth with cookie-based session auth.
@@ -1094,7 +1139,7 @@ import type { User } from "@t3tools/contracts";
 Inside `createServer` (after line 362 where `githubAppAutomation` is yielded), add:
 
 ```typescript
-  const userService = yield* UserService;
+const userService = yield * UserService;
 ```
 
 - [ ] **Step 2: Add cookie parsing helper**
@@ -1126,10 +1171,7 @@ function setSessionCookie(res: http.ServerResponse, sessionId: string): void {
 }
 
 function clearSessionCookie(res: http.ServerResponse): void {
-  res.setHeader(
-    "Set-Cookie",
-    "t3code_session=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0",
-  );
+  res.setHeader("Set-Cookie", "t3code_session=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0");
 }
 ```
 
@@ -1138,132 +1180,171 @@ function clearSessionCookie(res: http.ServerResponse): void {
 Inside the HTTP server request handler (inside `Effect.gen` around line 543), add auth routes BEFORE the `webUiAuth` check. Insert right after `const url = new URL(...)` on line 544:
 
 ```typescript
-        // ── Auth API routes (no auth required) ──────────────────────
-        if (url.pathname === "/api/auth/setup-required") {
-          const required = yield* userService.isSetupRequired;
-          respond(200, { "Content-Type": "application/json" }, JSON.stringify({ required }));
-          return;
-        }
+// ── Auth API routes (no auth required) ──────────────────────
+if (url.pathname === "/api/auth/setup-required") {
+  const required = yield * userService.isSetupRequired;
+  respond(200, { "Content-Type": "application/json" }, JSON.stringify({ required }));
+  return;
+}
 
-        if (url.pathname === "/api/auth/setup" && req.method === "POST") {
-          const body = JSON.parse(Buffer.from(yield* readHttpRequestBody(req)).toString("utf8"));
-          const result = yield* userService.setup({
-            username: body.username,
-            displayName: body.displayName,
-            password: body.password,
-          }).pipe(
-            Effect.mapError((e) => new RouteRequestError({ message: e.message })),
-          );
-          setSessionCookie(res, result.sessionId);
-          respond(200, { "Content-Type": "application/json" }, JSON.stringify({ user: result.user }));
-          return;
-        }
+if (url.pathname === "/api/auth/setup" && req.method === "POST") {
+  const body = JSON.parse(Buffer.from(yield * readHttpRequestBody(req)).toString("utf8"));
+  const result =
+    yield *
+    userService
+      .setup({
+        username: body.username,
+        displayName: body.displayName,
+        password: body.password,
+      })
+      .pipe(Effect.mapError((e) => new RouteRequestError({ message: e.message })));
+  setSessionCookie(res, result.sessionId);
+  respond(200, { "Content-Type": "application/json" }, JSON.stringify({ user: result.user }));
+  return;
+}
 
-        if (url.pathname === "/api/auth/login" && req.method === "POST") {
-          const body = JSON.parse(Buffer.from(yield* readHttpRequestBody(req)).toString("utf8"));
-          const result = yield* userService.login({
-            username: body.username,
-            password: body.password,
-          }).pipe(
-            Effect.mapError((e) => new RouteRequestError({ message: e.message })),
-          );
-          setSessionCookie(res, result.sessionId);
-          respond(200, { "Content-Type": "application/json" }, JSON.stringify({ user: result.user }));
-          return;
-        }
+if (url.pathname === "/api/auth/login" && req.method === "POST") {
+  const body = JSON.parse(Buffer.from(yield * readHttpRequestBody(req)).toString("utf8"));
+  const result =
+    yield *
+    userService
+      .login({
+        username: body.username,
+        password: body.password,
+      })
+      .pipe(Effect.mapError((e) => new RouteRequestError({ message: e.message })));
+  setSessionCookie(res, result.sessionId);
+  respond(200, { "Content-Type": "application/json" }, JSON.stringify({ user: result.user }));
+  return;
+}
 
-        if (url.pathname === "/api/auth/logout" && req.method === "POST") {
-          const sessionId = getSessionIdFromRequest(req);
-          if (sessionId) {
-            yield* userService.logout(sessionId).pipe(Effect.ignoreLogged);
-          }
-          clearSessionCookie(res);
-          respond(200, { "Content-Type": "application/json" }, JSON.stringify({}));
-          return;
-        }
+if (url.pathname === "/api/auth/logout" && req.method === "POST") {
+  const sessionId = getSessionIdFromRequest(req);
+  if (sessionId) {
+    yield * userService.logout(sessionId).pipe(Effect.ignoreLogged);
+  }
+  clearSessionCookie(res);
+  respond(200, { "Content-Type": "application/json" }, JSON.stringify({}));
+  return;
+}
 
-        if (url.pathname === "/api/auth/me") {
-          const sessionId = getSessionIdFromRequest(req);
-          if (!sessionId) {
-            respond(401, { "Content-Type": "application/json" }, JSON.stringify({ error: "Not authenticated" }));
-            return;
-          }
-          const maybeUser = yield* userService.validateSession(sessionId);
-          if (Option.isNone(maybeUser)) {
-            clearSessionCookie(res);
-            respond(401, { "Content-Type": "application/json" }, JSON.stringify({ error: "Session expired" }));
-            return;
-          }
-          respond(200, { "Content-Type": "application/json" }, JSON.stringify({ user: maybeUser.value }));
-          return;
-        }
+if (url.pathname === "/api/auth/me") {
+  const sessionId = getSessionIdFromRequest(req);
+  if (!sessionId) {
+    respond(
+      401,
+      { "Content-Type": "application/json" },
+      JSON.stringify({ error: "Not authenticated" }),
+    );
+    return;
+  }
+  const maybeUser = yield * userService.validateSession(sessionId);
+  if (Option.isNone(maybeUser)) {
+    clearSessionCookie(res);
+    respond(
+      401,
+      { "Content-Type": "application/json" },
+      JSON.stringify({ error: "Session expired" }),
+    );
+    return;
+  }
+  respond(200, { "Content-Type": "application/json" }, JSON.stringify({ user: maybeUser.value }));
+  return;
+}
 
-        if (url.pathname === "/api/auth/users") {
-          if (req.method === "GET") {
-            const sessionId = getSessionIdFromRequest(req);
-            if (!sessionId) {
-              respond(401, { "Content-Type": "application/json" }, JSON.stringify({ error: "Not authenticated" }));
-              return;
-            }
-            const maybeUser = yield* userService.validateSession(sessionId);
-            if (Option.isNone(maybeUser)) {
-              respond(401, { "Content-Type": "application/json" }, JSON.stringify({ error: "Session expired" }));
-              return;
-            }
-            const users = yield* userService.listUsers;
-            respond(200, { "Content-Type": "application/json" }, JSON.stringify({ users }));
-            return;
-          }
+if (url.pathname === "/api/auth/users") {
+  if (req.method === "GET") {
+    const sessionId = getSessionIdFromRequest(req);
+    if (!sessionId) {
+      respond(
+        401,
+        { "Content-Type": "application/json" },
+        JSON.stringify({ error: "Not authenticated" }),
+      );
+      return;
+    }
+    const maybeUser = yield * userService.validateSession(sessionId);
+    if (Option.isNone(maybeUser)) {
+      respond(
+        401,
+        { "Content-Type": "application/json" },
+        JSON.stringify({ error: "Session expired" }),
+      );
+      return;
+    }
+    const users = yield * userService.listUsers;
+    respond(200, { "Content-Type": "application/json" }, JSON.stringify({ users }));
+    return;
+  }
 
-          if (req.method === "POST") {
-            const sessionId = getSessionIdFromRequest(req);
-            if (!sessionId) {
-              respond(401, { "Content-Type": "application/json" }, JSON.stringify({ error: "Not authenticated" }));
-              return;
-            }
-            const maybeCaller = yield* userService.validateSession(sessionId);
-            if (Option.isNone(maybeCaller)) {
-              respond(401, { "Content-Type": "application/json" }, JSON.stringify({ error: "Session expired" }));
-              return;
-            }
-            const body = JSON.parse(Buffer.from(yield* readHttpRequestBody(req)).toString("utf8"));
-            const user = yield* userService.createUser({
-              username: body.username,
-              displayName: body.displayName,
-              password: body.password,
-              role: body.role ?? "member",
-              callerRole: maybeCaller.value.role,
-            }).pipe(
-              Effect.mapError((e) => new RouteRequestError({ message: e.message })),
-            );
-            respond(201, { "Content-Type": "application/json" }, JSON.stringify({ user }));
-            return;
-          }
-        }
+  if (req.method === "POST") {
+    const sessionId = getSessionIdFromRequest(req);
+    if (!sessionId) {
+      respond(
+        401,
+        { "Content-Type": "application/json" },
+        JSON.stringify({ error: "Not authenticated" }),
+      );
+      return;
+    }
+    const maybeCaller = yield * userService.validateSession(sessionId);
+    if (Option.isNone(maybeCaller)) {
+      respond(
+        401,
+        { "Content-Type": "application/json" },
+        JSON.stringify({ error: "Session expired" }),
+      );
+      return;
+    }
+    const body = JSON.parse(Buffer.from(yield * readHttpRequestBody(req)).toString("utf8"));
+    const user =
+      yield *
+      userService
+        .createUser({
+          username: body.username,
+          displayName: body.displayName,
+          password: body.password,
+          role: body.role ?? "member",
+          callerRole: maybeCaller.value.role,
+        })
+        .pipe(Effect.mapError((e) => new RouteRequestError({ message: e.message })));
+    respond(201, { "Content-Type": "application/json" }, JSON.stringify({ user }));
+    return;
+  }
+}
 
-        if (url.pathname.startsWith("/api/auth/users/") && req.method === "DELETE") {
-          const sessionId = getSessionIdFromRequest(req);
-          if (!sessionId) {
-            respond(401, { "Content-Type": "application/json" }, JSON.stringify({ error: "Not authenticated" }));
-            return;
-          }
-          const maybeCaller = yield* userService.validateSession(sessionId);
-          if (Option.isNone(maybeCaller)) {
-            respond(401, { "Content-Type": "application/json" }, JSON.stringify({ error: "Session expired" }));
-            return;
-          }
-          const targetUserId = url.pathname.slice("/api/auth/users/".length);
-          yield* userService.deleteUser({
-            userId: targetUserId as any,
-            callerRole: maybeCaller.value.role,
-          }).pipe(
-            Effect.mapError((e) => new RouteRequestError({ message: e.message })),
-          );
-          respond(200, { "Content-Type": "application/json" }, JSON.stringify({}));
-          return;
-        }
+if (url.pathname.startsWith("/api/auth/users/") && req.method === "DELETE") {
+  const sessionId = getSessionIdFromRequest(req);
+  if (!sessionId) {
+    respond(
+      401,
+      { "Content-Type": "application/json" },
+      JSON.stringify({ error: "Not authenticated" }),
+    );
+    return;
+  }
+  const maybeCaller = yield * userService.validateSession(sessionId);
+  if (Option.isNone(maybeCaller)) {
+    respond(
+      401,
+      { "Content-Type": "application/json" },
+      JSON.stringify({ error: "Session expired" }),
+    );
+    return;
+  }
+  const targetUserId = url.pathname.slice("/api/auth/users/".length);
+  yield *
+    userService
+      .deleteUser({
+        userId: targetUserId as any,
+        callerRole: maybeCaller.value.role,
+      })
+      .pipe(Effect.mapError((e) => new RouteRequestError({ message: e.message })));
+  respond(200, { "Content-Type": "application/json" }, JSON.stringify({}));
+  return;
+}
 
-        // ── Existing auth check (skip for auth routes above) ─────
+// ── Existing auth check (skip for auth routes above) ─────
 ```
 
 - [ ] **Step 4: Replace basic auth with cookie auth on WebSocket upgrade**
@@ -1271,66 +1352,66 @@ Inside the HTTP server request handler (inside `Effect.gen` around line 543), ad
 Replace the WebSocket upgrade auth check (lines 1243-1267) with:
 
 ```typescript
-  httpServer.on("upgrade", (request, socket, head) => {
-    socket.on("error", () => {});
+httpServer.on("upgrade", (request, socket, head) => {
+  socket.on("error", () => {});
 
-    // Cookie-based session auth for WebSocket
-    const sessionId = getSessionIdFromRequest(request);
+  // Cookie-based session auth for WebSocket
+  const sessionId = getSessionIdFromRequest(request);
 
-    // If auth token is set (desktop mode), allow token-based auth
-    if (authToken) {
-      let providedToken: string | null = null;
-      try {
-        const url = new URL(request.url ?? "/", `http://localhost:${port}`);
-        providedToken = url.searchParams.get("token");
-      } catch {
-        rejectUpgrade(socket, 400, "Invalid WebSocket URL");
-        return;
-      }
-
-      if (providedToken === authToken) {
-        wss.handleUpgrade(request, socket, head, (ws) => {
-          wss.emit("connection", ws, request);
-        });
-        return;
-      }
-    }
-
-    // Cookie-based session validation
-    if (!sessionId) {
-      // If no users exist yet (setup not done), allow connection
-      void runPromise(
-        userService.isSetupRequired.pipe(
-          Effect.tap((required) => {
-            if (required) {
-              wss.handleUpgrade(request, socket, head, (ws) => {
-                wss.emit("connection", ws, request);
-              });
-            } else {
-              rejectUpgrade(socket, 401, "Unauthorized WebSocket connection");
-            }
-          }),
-          Effect.ignoreLogged,
-        ),
-      );
+  // If auth token is set (desktop mode), allow token-based auth
+  if (authToken) {
+    let providedToken: string | null = null;
+    try {
+      const url = new URL(request.url ?? "/", `http://localhost:${port}`);
+      providedToken = url.searchParams.get("token");
+    } catch {
+      rejectUpgrade(socket, 400, "Invalid WebSocket URL");
       return;
     }
 
+    if (providedToken === authToken) {
+      wss.handleUpgrade(request, socket, head, (ws) => {
+        wss.emit("connection", ws, request);
+      });
+      return;
+    }
+  }
+
+  // Cookie-based session validation
+  if (!sessionId) {
+    // If no users exist yet (setup not done), allow connection
     void runPromise(
-      userService.validateSession(sessionId).pipe(
-        Effect.tap((maybeUser) => {
-          if (Option.isNone(maybeUser)) {
-            rejectUpgrade(socket, 401, "Session expired");
-          } else {
+      userService.isSetupRequired.pipe(
+        Effect.tap((required) => {
+          if (required) {
             wss.handleUpgrade(request, socket, head, (ws) => {
               wss.emit("connection", ws, request);
             });
+          } else {
+            rejectUpgrade(socket, 401, "Unauthorized WebSocket connection");
           }
         }),
         Effect.ignoreLogged,
       ),
     );
-  });
+    return;
+  }
+
+  void runPromise(
+    userService.validateSession(sessionId).pipe(
+      Effect.tap((maybeUser) => {
+        if (Option.isNone(maybeUser)) {
+          rejectUpgrade(socket, 401, "Session expired");
+        } else {
+          wss.handleUpgrade(request, socket, head, (ws) => {
+            wss.emit("connection", ws, request);
+          });
+        }
+      }),
+      Effect.ignoreLogged,
+    ),
+  );
+});
 ```
 
 - [ ] **Step 5: Remove the webUiAuth HTTP check**
@@ -1338,30 +1419,38 @@ Replace the WebSocket upgrade auth check (lines 1243-1267) with:
 Remove/replace the `webUiAuth` check in the HTTP handler (lines 545-559). Replace with:
 
 ```typescript
-        // Auth check for non-API routes
-        if (
-          !url.pathname.startsWith("/api/auth/") &&
-          url.pathname !== "/api/github/webhook"
-        ) {
-          const isSetupNeeded = yield* userService.isSetupRequired;
-          if (!isSetupNeeded) {
-            const sessionId = getSessionIdFromRequest(req);
-            if (!sessionId) {
-              // Let the SPA handle redirect to login
-              // Only block API/attachment routes
-              if (url.pathname.startsWith("/api/") || url.pathname.startsWith(ATTACHMENTS_ROUTE_PREFIX)) {
-                respond(401, { "Content-Type": "application/json" }, JSON.stringify({ error: "Not authenticated" }));
-                return;
-              }
-            } else {
-              const maybeUser = yield* userService.validateSession(sessionId);
-              if (Option.isNone(maybeUser) && (url.pathname.startsWith("/api/") || url.pathname.startsWith(ATTACHMENTS_ROUTE_PREFIX))) {
-                respond(401, { "Content-Type": "application/json" }, JSON.stringify({ error: "Session expired" }));
-                return;
-              }
-            }
-          }
-        }
+// Auth check for non-API routes
+if (!url.pathname.startsWith("/api/auth/") && url.pathname !== "/api/github/webhook") {
+  const isSetupNeeded = yield * userService.isSetupRequired;
+  if (!isSetupNeeded) {
+    const sessionId = getSessionIdFromRequest(req);
+    if (!sessionId) {
+      // Let the SPA handle redirect to login
+      // Only block API/attachment routes
+      if (url.pathname.startsWith("/api/") || url.pathname.startsWith(ATTACHMENTS_ROUTE_PREFIX)) {
+        respond(
+          401,
+          { "Content-Type": "application/json" },
+          JSON.stringify({ error: "Not authenticated" }),
+        );
+        return;
+      }
+    } else {
+      const maybeUser = yield * userService.validateSession(sessionId);
+      if (
+        Option.isNone(maybeUser) &&
+        (url.pathname.startsWith("/api/") || url.pathname.startsWith(ATTACHMENTS_ROUTE_PREFIX))
+      ) {
+        respond(
+          401,
+          { "Content-Type": "application/json" },
+          JSON.stringify({ error: "Session expired" }),
+        );
+        return;
+      }
+    }
+  }
+}
 ```
 
 - [ ] **Step 6: Add Option to imports if not already there**
@@ -1385,6 +1474,7 @@ git commit -m "feat(server): add HTTP auth endpoints and cookie-based session au
 ## Task 8: Thread Assignment in Contracts & Server
 
 **Files:**
+
 - Modify: `packages/contracts/src/orchestration.ts`
 - Modify: `apps/server/src/persistence/Services/ProjectionThreads.ts`
 - Modify: `apps/server/src/persistence/Layers/ProjectionThreads.ts`
@@ -1430,6 +1520,7 @@ git commit -m "feat: add assignedUserId to thread schema and persistence layer"
 ## Task 9: Web App Auth Store & API Client
 
 **Files:**
+
 - Create: `apps/web/src/authStore.ts`
 - Create: `apps/web/src/lib/authApi.ts`
 
@@ -1470,8 +1561,7 @@ async function fetchJson<T>(path: string, options?: RequestInit): Promise<T> {
 }
 
 export const authApi = {
-  setupRequired: () =>
-    fetchJson<{ required: boolean }>("/api/auth/setup-required"),
+  setupRequired: () => fetchJson<{ required: boolean }>("/api/auth/setup-required"),
 
   setup: (input: { username: string; displayName: string; password: string }) =>
     fetchJson<{ user: User }>("/api/auth/setup", {
@@ -1485,14 +1575,11 @@ export const authApi = {
       body: JSON.stringify(input),
     }),
 
-  logout: () =>
-    fetchJson<{}>("/api/auth/logout", { method: "POST" }),
+  logout: () => fetchJson<{}>("/api/auth/logout", { method: "POST" }),
 
-  me: () =>
-    fetchJson<{ user: User }>("/api/auth/me"),
+  me: () => fetchJson<{ user: User }>("/api/auth/me"),
 
-  listUsers: () =>
-    fetchJson<{ users: User[] }>("/api/auth/users"),
+  listUsers: () => fetchJson<{ users: User[] }>("/api/auth/users"),
 
   createUser: (input: { username: string; displayName: string; password: string; role?: string }) =>
     fetchJson<{ user: User }>("/api/auth/users", {
@@ -1500,8 +1587,7 @@ export const authApi = {
       body: JSON.stringify(input),
     }),
 
-  deleteUser: (userId: string) =>
-    fetchJson<{}>(`/api/auth/users/${userId}`, { method: "DELETE" }),
+  deleteUser: (userId: string) => fetchJson<{}>(`/api/auth/users/${userId}`, { method: "DELETE" }),
 };
 ```
 
@@ -1597,6 +1683,7 @@ git commit -m "feat(web): add auth API client and auth state store"
 ## Task 10: Login & Setup Pages
 
 **Files:**
+
 - Create: `apps/web/src/components/auth/LoginForm.tsx`
 - Create: `apps/web/src/components/auth/SetupForm.tsx`
 - Create: `apps/web/src/components/auth/AuthGuard.tsx`
@@ -1680,7 +1767,11 @@ export function LoginForm() {
             />
           </div>
 
-          <Button type="submit" className="w-full" disabled={submitting || !username.trim() || !password}>
+          <Button
+            type="submit"
+            className="w-full"
+            disabled={submitting || !username.trim() || !password}
+          >
             {submitting ? "Signing in..." : "Sign in"}
           </Button>
         </form>
@@ -1712,7 +1803,8 @@ export function SetupForm() {
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!username.trim() || !displayName.trim() || !password || password !== confirmPassword) return;
+    if (!username.trim() || !displayName.trim() || !password || password !== confirmPassword)
+      return;
     setSubmitting(true);
     await setup(username.trim(), displayName.trim(), password);
     setSubmitting(false);
@@ -1743,7 +1835,10 @@ export function SetupForm() {
               autoComplete="username"
               autoFocus
               value={username}
-              onChange={(e) => { setUsername(e.target.value); clearError(); }}
+              onChange={(e) => {
+                setUsername(e.target.value);
+                clearError();
+              }}
               className="flex h-9 w-full rounded-md border border-border bg-background px-3 py-1 text-sm text-foreground shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               placeholder="Choose a username"
             />
@@ -1757,7 +1852,10 @@ export function SetupForm() {
               id="displayName"
               type="text"
               value={displayName}
-              onChange={(e) => { setDisplayName(e.target.value); clearError(); }}
+              onChange={(e) => {
+                setDisplayName(e.target.value);
+                clearError();
+              }}
               className="flex h-9 w-full rounded-md border border-border bg-background px-3 py-1 text-sm text-foreground shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               placeholder="Your name"
             />
@@ -1772,7 +1870,10 @@ export function SetupForm() {
               type="password"
               autoComplete="new-password"
               value={password}
-              onChange={(e) => { setPassword(e.target.value); clearError(); }}
+              onChange={(e) => {
+                setPassword(e.target.value);
+                clearError();
+              }}
               className="flex h-9 w-full rounded-md border border-border bg-background px-3 py-1 text-sm text-foreground shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               placeholder="Choose a password"
             />
@@ -1787,19 +1888,22 @@ export function SetupForm() {
               type="password"
               autoComplete="new-password"
               value={confirmPassword}
-              onChange={(e) => { setConfirmPassword(e.target.value); clearError(); }}
+              onChange={(e) => {
+                setConfirmPassword(e.target.value);
+                clearError();
+              }}
               className="flex h-9 w-full rounded-md border border-border bg-background px-3 py-1 text-sm text-foreground shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               placeholder="Confirm password"
             />
-            {passwordMismatch && (
-              <p className="text-xs text-red-400">Passwords don't match</p>
-            )}
+            {passwordMismatch && <p className="text-xs text-red-400">Passwords don't match</p>}
           </div>
 
           <Button
             type="submit"
             className="w-full"
-            disabled={submitting || !username.trim() || !displayName.trim() || !password || passwordMismatch}
+            disabled={
+              submitting || !username.trim() || !displayName.trim() || !password || passwordMismatch
+            }
           >
             {submitting ? "Creating account..." : "Create admin account"}
           </Button>
@@ -1848,11 +1952,12 @@ export function AuthGuard({ children }: { children: ReactNode }) {
 }
 ```
 
-- [ ] **Step 4: Wrap __root.tsx with AuthGuard**
+- [ ] **Step 4: Wrap \_\_root.tsx with AuthGuard**
 
 In `apps/web/src/routes/__root.tsx`, import and wrap:
 
 Add import:
+
 ```typescript
 import { AuthGuard } from "../components/auth/AuthGuard";
 ```
@@ -1914,6 +2019,7 @@ git commit -m "feat(web): add login, setup pages, and auth guard"
 ## Task 11: Thread Assignment in Web App Types & Store
 
 **Files:**
+
 - Modify: `apps/web/src/types.ts`
 - Modify: `apps/web/src/store.ts`
 
@@ -1922,7 +2028,7 @@ git commit -m "feat(web): add login, setup pages, and auth guard"
 In `apps/web/src/types.ts`, add to the `Thread` interface (after `worktreePath`):
 
 ```typescript
-  assignedUserId: string | null;
+assignedUserId: string | null;
 ```
 
 - [ ] **Step 2: Update syncServerReadModel in store.ts**
@@ -1950,6 +2056,7 @@ git commit -m "feat(web): add assignedUserId to Thread type and store mapping"
 ## Task 12: Sidebar User Filter & Thread Badges
 
 **Files:**
+
 - Modify: `apps/web/src/components/Sidebar.tsx`
 
 - [ ] **Step 1: Add user filter state and user list query**
@@ -1957,21 +2064,23 @@ git commit -m "feat(web): add assignedUserId to Thread type and store mapping"
 Near the top of the `ThreadSidebar` component (find it by searching for `export default function`), add:
 
 Import the auth store and API:
+
 ```typescript
 import { useAuthStore } from "../authStore";
 import { authApi } from "../lib/authApi";
 ```
 
 Add state and query inside the component:
+
 ```typescript
-  const currentUser = useAuthStore((s) => s.user);
-  const [threadUserFilter, setThreadUserFilter] = useState<string | "all" | "mine">("mine");
-  const { data: usersData } = useQuery({
-    queryKey: ["auth", "users"],
-    queryFn: () => authApi.listUsers(),
-    staleTime: 60_000,
-  });
-  const allUsers = usersData?.users ?? [];
+const currentUser = useAuthStore((s) => s.user);
+const [threadUserFilter, setThreadUserFilter] = useState<string | "all" | "mine">("mine");
+const { data: usersData } = useQuery({
+  queryKey: ["auth", "users"],
+  queryFn: () => authApi.listUsers(),
+  staleTime: 60_000,
+});
+const allUsers = usersData?.users ?? [];
 ```
 
 - [ ] **Step 2: Filter threads by assigned user**
@@ -1979,14 +2088,14 @@ Add state and query inside the component:
 Find where threads are filtered/rendered in the sidebar. Add filtering logic:
 
 ```typescript
-  const filteredThreads = useMemo(() => {
-    if (!currentUser) return threads;
-    if (threadUserFilter === "all") return threads;
-    if (threadUserFilter === "mine") {
-      return threads.filter((t) => t.assignedUserId === currentUser.id || t.assignedUserId === null);
-    }
-    return threads.filter((t) => t.assignedUserId === threadUserFilter);
-  }, [threads, threadUserFilter, currentUser]);
+const filteredThreads = useMemo(() => {
+  if (!currentUser) return threads;
+  if (threadUserFilter === "all") return threads;
+  if (threadUserFilter === "mine") {
+    return threads.filter((t) => t.assignedUserId === currentUser.id || t.assignedUserId === null);
+  }
+  return threads.filter((t) => t.assignedUserId === threadUserFilter);
+}, [threads, threadUserFilter, currentUser]);
 ```
 
 Use `filteredThreads` instead of `threads` in the rendering.
@@ -2000,7 +2109,11 @@ Add a filter dropdown in the sidebar header area (near where thread sort order i
   <MenuTrigger>
     <Button variant="ghost" size="sm" className="gap-1.5 text-xs text-muted-foreground">
       <UserIcon className="size-3" />
-      {threadUserFilter === "mine" ? "My Threads" : threadUserFilter === "all" ? "All Threads" : allUsers.find((u) => u.id === threadUserFilter)?.displayName ?? "User"}
+      {threadUserFilter === "mine"
+        ? "My Threads"
+        : threadUserFilter === "all"
+          ? "All Threads"
+          : (allUsers.find((u) => u.id === threadUserFilter)?.displayName ?? "User")}
     </Button>
   </MenuTrigger>
   <MenuPopup>
@@ -2024,11 +2137,16 @@ Import `UserIcon` from lucide-react.
 In the thread item rendering, add a small badge showing the assigned user:
 
 ```tsx
-{thread.assignedUserId && thread.assignedUserId !== currentUser?.id && (
-  <span className="ml-auto text-[10px] text-muted-foreground/50">
-    {allUsers.find((u) => u.id === thread.assignedUserId)?.displayName?.charAt(0)?.toUpperCase() ?? "?"}
-  </span>
-)}
+{
+  thread.assignedUserId && thread.assignedUserId !== currentUser?.id && (
+    <span className="ml-auto text-[10px] text-muted-foreground/50">
+      {allUsers
+        .find((u) => u.id === thread.assignedUserId)
+        ?.displayName?.charAt(0)
+        ?.toUpperCase() ?? "?"}
+    </span>
+  );
+}
 ```
 
 - [ ] **Step 5: Add logout button to sidebar footer**
@@ -2069,6 +2187,7 @@ git commit -m "feat(web): add thread user filter and user badge in sidebar"
 ## Task 13: Thread Assignment Dropdown in Chat Header
 
 **Files:**
+
 - Create: `apps/web/src/components/ThreadAssignmentDropdown.tsx`
 - Modify: `apps/web/src/components/chat/ChatHeader.tsx`
 
@@ -2090,7 +2209,10 @@ interface ThreadAssignmentDropdownProps {
   assignedUserId: string | null;
 }
 
-export function ThreadAssignmentDropdown({ threadId, assignedUserId }: ThreadAssignmentDropdownProps) {
+export function ThreadAssignmentDropdown({
+  threadId,
+  assignedUserId,
+}: ThreadAssignmentDropdownProps) {
   const { data: usersData } = useQuery({
     queryKey: ["auth", "users"],
     queryFn: () => authApi.listUsers(),
@@ -2164,6 +2286,7 @@ git commit -m "feat(web): add thread assignment dropdown in chat header"
 ## Task 14: User Management Settings Page
 
 **Files:**
+
 - Create: `apps/web/src/components/settings/UsersPanel.tsx`
 - Create: `apps/web/src/routes/settings.users.tsx`
 - Modify: `apps/web/src/components/settings/SettingsSidebarNav.tsx`
@@ -2360,6 +2483,7 @@ git commit -m "feat(web): add user management settings page"
 ## Task 15: Remove Nginx Basic Auth from Docker Compose
 
 **Files:**
+
 - Modify: `docker-compose.yml`
 
 - [ ] **Step 1: Remove basic auth env vars and nginx config**
@@ -2392,6 +2516,7 @@ git commit -m "feat(docker): remove nginx basic auth, app handles auth now"
 ## Task 16: Remove webUiAuth from Server Config
 
 **Files:**
+
 - Modify: `apps/server/src/config.ts`
 - Modify: `apps/server/src/main.ts` (or wherever webUiAuth is set)
 
