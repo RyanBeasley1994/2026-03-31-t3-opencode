@@ -82,6 +82,7 @@ import { makeServerPushBus } from "./wsServer/pushBus.ts";
 import { makeServerReadiness } from "./wsServer/readiness.ts";
 import { decodeJsonResult, formatSchemaError } from "@t3tools/shared/schemaJson";
 import { GithubAppAutomation } from "./github/Services/GithubAppAutomation.ts";
+import { UserService } from "./auth/UserService.ts";
 
 /**
  * ServerShape - Service API for server lifecycle control.
@@ -315,7 +316,8 @@ export type ServerRuntimeServices =
   | ServerSettingsService
   | Open
   | AnalyticsService
-  | GithubAppAutomation;
+  | GithubAppAutomation
+  | UserService;
 
 export class ServerLifecycleError extends Schema.TaggedErrorClass<ServerLifecycleError>()(
   "ServerLifecycleError",

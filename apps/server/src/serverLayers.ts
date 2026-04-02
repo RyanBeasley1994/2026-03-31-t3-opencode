@@ -41,6 +41,9 @@ import { RoutingTextGenerationLive } from "./git/Layers/RoutingTextGeneration";
 import { PtyAdapter } from "./terminal/Services/PTY";
 import { AnalyticsService } from "./telemetry/Services/AnalyticsService";
 import { GithubAppAutomationLive } from "./github/Layers/GithubAppAutomation.ts";
+import { UserRepositoryLive } from "./persistence/Layers/Users.ts";
+import { UserSessionRepositoryLive } from "./persistence/Layers/UserSessions.ts";
+import { UserServiceLive } from "./auth/UserServiceLive.ts";
 
 type RuntimePtyAdapterLoader = {
   layer: Layer.Layer<PtyAdapter, never, FileSystem.FileSystem | Path.Path>;
@@ -165,7 +168,12 @@ export function makeServerRuntimeServicesLayer() {
 
   const githubAutomationLayer = GithubAppAutomationLive.pipe(Layer.provide(baseRuntimeLayer));
 
-  return Layer.mergeAll(baseRuntimeLayer, githubAutomationLayer).pipe(
+  const userServiceLayer = UserServiceLive.pipe(
+    Layer.provide(UserRepositoryLive),
+    Layer.provide(UserSessionRepositoryLive),
+  );
+
+  return Layer.mergeAll(baseRuntimeLayer, githubAutomationLayer, userServiceLayer).pipe(
     Layer.provideMerge(NodeServices.layer),
   );
 }
