@@ -27,6 +27,12 @@ export interface OpenCodeServerPoolEvent {
 export interface OpenCodeProviderCatalog {
   readonly defaultModel: string;
   readonly models: ReadonlyArray<ServerProvider["models"][number]>;
+  readonly agents: ReadonlyArray<{
+    name: string;
+    description?: string;
+    builtIn: boolean;
+    color?: string;
+  }>;
 }
 
 export interface OpenCodeServerPoolShape {

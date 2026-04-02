@@ -55,6 +55,7 @@ const unusedOpenCodeServerPool: OpenCodeServerPoolShape = {
     Effect.succeed({
       defaultModel: "openai/gpt-5.4",
       models: [],
+      agents: [],
     }),
   stopAll: () => Effect.void,
   streamEvents: Stream.empty,
@@ -523,6 +524,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsService.layerTest()))(
             checkedAt: "2026-03-25T00:00:00.000Z",
             version: "1.0.0",
             models: [],
+            agents: [],
           },
           {
             provider: "claudeAgent",
@@ -533,6 +535,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsService.layerTest()))(
             checkedAt: "2026-03-25T00:00:00.000Z",
             version: "1.0.0",
             models: [],
+            agents: [],
           },
           {
             provider: "opencode",
@@ -551,6 +554,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsService.layerTest()))(
                 capabilities: null,
               },
             ],
+            agents: [],
           },
         ] as const satisfies ReadonlyArray<ServerProvider>;
 
@@ -584,6 +588,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsService.layerTest()))(
                     capabilities: null,
                   },
                 ],
+                agents: [],
               } satisfies ServerProvider),
               refresh: Effect.die("unused"),
               streamChanges: Stream.empty,
@@ -716,6 +721,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsService.layerTest()))(
             auth: { status: "unknown" },
             message: "OpenCode CLI (`opencode`) is not installed or not on PATH.",
             models: [],
+            agents: [],
           });
         }).pipe(Effect.provide(failingSpawnerLayer("spawn opencode ENOENT"))),
       );
@@ -736,6 +742,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, ServerSettingsService.layerTest()))(
               message:
                 "OpenCode CLI (`/opt/opencode/bin/opencode`) is not installed or not executable.",
               models: [],
+              agents: [],
             });
           }).pipe(
             Effect.provide(

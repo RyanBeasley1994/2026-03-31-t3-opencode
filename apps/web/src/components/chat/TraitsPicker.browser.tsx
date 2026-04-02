@@ -54,6 +54,7 @@ const TEST_PROVIDERS: ReadonlyArray<ServerProvider> = [
         },
       },
     ],
+    agents: [],
   },
   {
     provider: "claudeAgent",
@@ -112,6 +113,7 @@ const TEST_PROVIDERS: ReadonlyArray<ServerProvider> = [
         },
       },
     ],
+    agents: [],
   },
 ];
 

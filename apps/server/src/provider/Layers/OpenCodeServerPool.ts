@@ -4,7 +4,7 @@ import { Buffer } from "node:buffer";
 import readline from "node:readline";
 import path from "node:path";
 
-import { createOpencodeClient } from "@opencode-ai/sdk/v2/client";
+import { createOpencodeClient, type Agent } from "@opencode-ai/sdk/v2/client";
 import { Effect, Layer, PubSub, Stream } from "effect";
 
 import { ProviderAdapterProcessError, ProviderAdapterRequestError } from "../Errors.ts";
@@ -337,23 +337,52 @@ const makeOpenCodeServerPool = Effect.gen(function* () {
     Effect.gen(function* () {
       const lease = yield* acquire(input);
       try {
-        const providers = yield* Effect.tryPromise({
-          try: () =>
-            lease.client.config
-              .providers(undefined, { throwOnError: true })
-              .then((result) => result.data),
-          catch: (cause) =>
-            toRequestError(
-              "config.providers",
-              cause instanceof Error ? cause.message : "Failed to load OpenCode provider catalog.",
-              cause,
-            ),
-        });
+        const [providers, agents] = yield* Effect.all([
+          Effect.tryPromise({
+            try: () =>
+              lease.client.config
+                .providers(undefined, { throwOnError: true })
+                .then((result) => result.data),
+            catch: (cause) =>
+              toRequestError(
+                "config.providers",
+                cause instanceof Error
+                  ? cause.message
+                  : "Failed to load OpenCode provider catalog.",
+                cause,
+              ),
+          }),
+          Effect.tryPromise({
+            try: () =>
+              lease.client.app
+                .agents(undefined, { throwOnError: true })
+                .then((result) => result.data),
+            catch: (cause) =>
+              toRequestError(
+                "agents",
+                cause instanceof Error ? cause.message : "Failed to load OpenCode agents.",
+                cause,
+              ),
+          }),
+        ]);
 
-        return toOpenCodeProviderCatalog({
+        const catalog = toOpenCodeProviderCatalog({
           providers: providers.providers,
           defaultByProvider: providers.default,
         });
+
+        return {
+          ...catalog,
+          agents: agents
+            .filter((a: Agent) => a.mode === "primary" || a.mode === "all")
+            .map((a: Agent) =>
+              Object.assign(
+                { name: a.name, builtIn: a.native ?? false },
+                a.description ? { description: a.description } : undefined,
+                a.color ? { color: a.color } : undefined,
+              ),
+            ),
+        };
       } finally {
         yield* lease.release;
       }

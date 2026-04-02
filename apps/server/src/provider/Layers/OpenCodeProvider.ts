@@ -217,6 +217,7 @@ export const OpenCodeProviderLive = Layer.effect(
               ? `OpenCode provider discovery failed. ${catalog.failure.message}`
               : "OpenCode provider discovery failed.",
           models: providerModelsFromCatalog(BUILT_IN_MODELS, [], opencodeSettings.customModels),
+          agents: [],
         } satisfies ServerProvider;
       }
 
@@ -227,6 +228,7 @@ export const OpenCodeProviderLive = Layer.effect(
           catalog.success.models,
           opencodeSettings.customModels,
         ),
+        agents: catalog.success.agents,
       } satisfies ServerProvider;
     });
 

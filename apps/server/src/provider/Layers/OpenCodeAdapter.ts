@@ -1662,7 +1662,10 @@ const makeOpenCodeAdapter = Effect.gen(function* () {
           : undefined;
       const selectedModelSlug =
         input.modelSelection?.provider === PROVIDER ? input.modelSelection.model : undefined;
-      const agent = input.interactionMode === "plan" ? "plan" : "build";
+      const agent =
+        input.interactionMode === undefined || input.interactionMode === "default"
+          ? "build"
+          : input.interactionMode;
 
       state.orderedUserMessageIds.push(openCodeMessageId);
       setState(state, {

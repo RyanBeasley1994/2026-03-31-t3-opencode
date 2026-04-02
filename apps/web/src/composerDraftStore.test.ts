@@ -108,6 +108,7 @@ const TEST_SERVER_PROVIDERS: ReadonlyArray<ServerProvider> = [
     auth: { status: "authenticated" },
     checkedAt: "2026-03-17T12:00:00.000Z",
     models: [],
+    agents: [],
   },
   {
     provider: "claudeAgent",
@@ -118,6 +119,7 @@ const TEST_SERVER_PROVIDERS: ReadonlyArray<ServerProvider> = [
     auth: { status: "authenticated" },
     checkedAt: "2026-03-17T12:00:00.000Z",
     models: [],
+    agents: [],
   },
   {
     provider: "opencode",
@@ -128,6 +130,7 @@ const TEST_SERVER_PROVIDERS: ReadonlyArray<ServerProvider> = [
     auth: { status: "authenticated" },
     checkedAt: "2026-03-17T12:00:00.000Z",
     models: [],
+    agents: [],
   },
 ];
 

@@ -75,6 +75,7 @@ const TEST_SERVER_PROVIDERS: ReadonlyArray<ServerProvider> = [
     auth: { status: "authenticated" },
     checkedAt: "2026-02-23T00:00:00.000Z",
     models: [makeServerProviderModel("gpt-5.4", "GPT-5.4")],
+    agents: [],
   },
   {
     provider: "claudeAgent",
@@ -85,6 +86,7 @@ const TEST_SERVER_PROVIDERS: ReadonlyArray<ServerProvider> = [
     auth: { status: "authenticated" },
     checkedAt: "2026-02-23T00:00:00.000Z",
     models: [makeServerProviderModel("claude-haiku-4-5", "Claude Haiku 4.5")],
+    agents: [],
   },
   {
     provider: "opencode",
@@ -95,6 +97,7 @@ const TEST_SERVER_PROVIDERS: ReadonlyArray<ServerProvider> = [
     auth: { status: "authenticated" },
     checkedAt: "2026-02-23T00:00:00.000Z",
     models: [makeServerProviderModel("openai/gpt-5.4", "GPT-5.4")],
+    agents: [],
   },
 ];
 

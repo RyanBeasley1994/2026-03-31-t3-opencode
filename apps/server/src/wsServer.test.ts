@@ -83,6 +83,7 @@ const defaultProviderStatuses: ReadonlyArray<ServerProvider> = [
     auth: { status: "authenticated" },
     checkedAt: "2026-01-01T00:00:00.000Z",
     models: [],
+    agents: [],
   },
 ];
 
@@ -98,6 +99,7 @@ const inertOpenCodeServerPool: OpenCodeServerPoolShape = {
     Effect.succeed({
       defaultModel: "openai/gpt-5.4",
       models: [],
+      agents: [],
     }),
   stopAll: () => Effect.void,
   streamEvents: Stream.empty,

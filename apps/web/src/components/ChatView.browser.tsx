@@ -121,6 +121,7 @@ function createBaseServerConfig(): ServerConfig {
         auth: { status: "authenticated" },
         checkedAt: NOW_ISO,
         models: [],
+        agents: [],
       },
     ],
     availableEditors: [],
