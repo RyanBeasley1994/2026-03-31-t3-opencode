@@ -30,6 +30,8 @@ import { NetService } from "@t3tools/shared/Net";
 import { RotatingFileSink } from "@t3tools/shared/logging";
 import { showDesktopConfirmDialog } from "./confirmDialog";
 import { syncShellEnvironment } from "./syncShellEnvironment";
+import { readConnectionConfig, writeConnectionConfig } from "./connectionConfig";
+import { connectionScreenHtml } from "./connectionScreen";
 import { getAutoUpdateDisabledReason, shouldBroadcastDownloadProgress } from "./updateState";
 import {
   createInitialDesktopUpdateState,
@@ -59,6 +61,7 @@ const UPDATE_DOWNLOAD_CHANNEL = "desktop:update-download";
 const UPDATE_INSTALL_CHANNEL = "desktop:update-install";
 const UPDATE_CHECK_CHANNEL = "desktop:update-check";
 const GET_WS_URL_CHANNEL = "desktop:get-ws-url";
+const SAVE_CONNECTION_CONFIG_CHANNEL = "desktop:save-connection-config";
 const BASE_DIR = process.env.T3CODE_HOME?.trim() || Path.join(OS.homedir(), ".t3");
 const STATE_DIR = Path.join(BASE_DIR, "userdata");
 const DESKTOP_SCHEME = "t3";
@@ -86,6 +89,8 @@ let backendProcess: ChildProcess.ChildProcess | null = null;
 let backendPort = 0;
 let backendAuthToken = "";
 let backendWsUrl = "";
+let connectionMode: "local" | "server" | "pending" = "pending";
+let remoteServerUrl = "";
 let restartAttempt = 0;
 let restartTimer: ReturnType<typeof setTimeout> | null = null;
 let isQuitting = false;
@@ -960,6 +965,7 @@ function configureAutoUpdater(): void {
   updatePollTimer.unref();
 }
 function scheduleBackendRestart(reason: string): void {
+  if (connectionMode === "server") return;
   if (isQuitting || restartTimer) return;
 
   const delayMs = Math.min(500 * 2 ** restartAttempt, 10_000);
@@ -1050,6 +1056,7 @@ function startBackend(): void {
 }
 
 function stopBackend(): void {
+  if (connectionMode === "server") return;
   if (restartTimer) {
     clearTimeout(restartTimer);
     restartTimer = null;
@@ -1123,7 +1130,7 @@ async function stopBackendAndWaitForExit(timeoutMs = 5_000): Promise<void> {
 function registerIpcHandlers(): void {
   ipcMain.removeAllListeners(GET_WS_URL_CHANNEL);
   ipcMain.on(GET_WS_URL_CHANNEL, (event) => {
-    event.returnValue = backendWsUrl;
+    event.returnValue = connectionMode === "server" ? "" : backendWsUrl;
   });
 
   ipcMain.removeHandler(PICK_FOLDER_CHANNEL);
@@ -1282,6 +1289,46 @@ function registerIpcHandlers(): void {
       state: updateState,
     } satisfies DesktopUpdateCheckResult;
   });
+
+  ipcMain.removeHandler(SAVE_CONNECTION_CONFIG_CHANNEL);
+  ipcMain.handle(SAVE_CONNECTION_CONFIG_CHANNEL, async (_event, rawConfig: unknown) => {
+    if (typeof rawConfig !== "object" || rawConfig === null) return;
+    const config = rawConfig as Record<string, unknown>;
+    if (config.mode !== "local" && config.mode !== "server") return;
+    if (config.mode === "server" && typeof config.serverUrl !== "string") return;
+
+    const validated = {
+      mode: config.mode as "local" | "server",
+      serverUrl: config.mode === "server" ? (config.serverUrl as string) : null,
+    };
+    writeConnectionConfig(STATE_DIR, validated);
+    connectionMode = validated.mode;
+    remoteServerUrl = validated.serverUrl ?? "";
+
+    if (connectionMode === "local") {
+      // Start backend and load the bundled app
+      backendPort = await Effect.service(NetService).pipe(
+        Effect.flatMap((net) => net.reserveLoopbackPort()),
+        Effect.provide(NetService.layer),
+        Effect.runPromise,
+      );
+      backendAuthToken = Crypto.randomBytes(24).toString("hex");
+      backendWsUrl = `ws://127.0.0.1:${backendPort}/?token=${encodeURIComponent(backendAuthToken)}`;
+      startBackend();
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        if (isDevelopment) {
+          void mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL as string);
+        } else {
+          void mainWindow.loadURL(`${DESKTOP_SCHEME}://app/index.html`);
+        }
+      }
+    } else {
+      // Server mode — load the remote URL directly
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        void mainWindow.loadURL(remoteServerUrl);
+      }
+    }
+  });
 }
 
 function getIconOption(): { icon: string } | Record<string, never> {
@@ -1359,7 +1406,11 @@ function createWindow(): BrowserWindow {
     window.show();
   });
 
-  if (isDevelopment) {
+  if (connectionMode === "pending") {
+    void window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(connectionScreenHtml())}`);
+  } else if (connectionMode === "server") {
+    void window.loadURL(remoteServerUrl);
+  } else if (isDevelopment) {
     void window.loadURL(process.env.VITE_DEV_SERVER_URL as string);
     window.webContents.openDevTools({ mode: "detach" });
   } else {
@@ -1384,21 +1435,41 @@ configureAppIdentity();
 
 async function bootstrap(): Promise<void> {
   writeDesktopLogHeader("bootstrap start");
-  backendPort = await Effect.service(NetService).pipe(
-    Effect.flatMap((net) => net.reserveLoopbackPort()),
-    Effect.provide(NetService.layer),
-    Effect.runPromise,
-  );
-  writeDesktopLogHeader(`reserved backend port via NetService port=${backendPort}`);
-  backendAuthToken = Crypto.randomBytes(24).toString("hex");
-  const baseUrl = `ws://127.0.0.1:${backendPort}`;
-  backendWsUrl = `${baseUrl}/?token=${encodeURIComponent(backendAuthToken)}`;
-  writeDesktopLogHeader(`bootstrap resolved websocket endpoint baseUrl=${baseUrl}`);
 
   registerIpcHandlers();
   writeDesktopLogHeader("bootstrap ipc handlers registered");
-  startBackend();
-  writeDesktopLogHeader("bootstrap backend start requested");
+
+  const config = readConnectionConfig(STATE_DIR);
+
+  if (!config) {
+    // First launch — show connection picker
+    connectionMode = "pending";
+    writeDesktopLogHeader("bootstrap no config found, showing connection screen");
+    mainWindow = createWindow();
+    writeDesktopLogHeader("bootstrap main window created (connection screen)");
+    return;
+  }
+
+  connectionMode = config.mode;
+  remoteServerUrl = config.serverUrl ?? "";
+  writeDesktopLogHeader(`bootstrap config loaded mode=${connectionMode}`);
+
+  if (connectionMode === "local") {
+    backendPort = await Effect.service(NetService).pipe(
+      Effect.flatMap((net) => net.reserveLoopbackPort()),
+      Effect.provide(NetService.layer),
+      Effect.runPromise,
+    );
+    writeDesktopLogHeader(`reserved backend port via NetService port=${backendPort}`);
+    backendAuthToken = Crypto.randomBytes(24).toString("hex");
+    backendWsUrl = `ws://127.0.0.1:${backendPort}/?token=${encodeURIComponent(backendAuthToken)}`;
+    writeDesktopLogHeader(`bootstrap resolved websocket endpoint`);
+    startBackend();
+    writeDesktopLogHeader("bootstrap backend start requested");
+  } else {
+    writeDesktopLogHeader(`bootstrap server mode, remote=${remoteServerUrl}`);
+  }
+
   mainWindow = createWindow();
   writeDesktopLogHeader("bootstrap main window created");
 }
