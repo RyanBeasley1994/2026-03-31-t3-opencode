@@ -15,6 +15,7 @@ import { Button } from "../ui/button";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { SidebarTrigger } from "../ui/sidebar";
 import { OpenInPicker } from "./OpenInPicker";
+import { ThreadAssignmentDropdown } from "../ThreadAssignmentDropdown";
 
 interface ChatHeaderProps {
   activeThreadId: ThreadId;
@@ -36,6 +37,7 @@ interface ChatHeaderProps {
   onAddProjectScript: (input: NewProjectScriptInput) => Promise<void>;
   onUpdateProjectScript: (scriptId: string, input: NewProjectScriptInput) => Promise<void>;
   onDeleteProjectScript: (scriptId: string) => Promise<void>;
+  assignedUserId: string | null;
   onToggleTerminal: () => void;
   onToggleDiff: () => void;
 }
@@ -56,6 +58,7 @@ export const ChatHeader = memo(function ChatHeader({
   diffToggleShortcutLabel,
   gitCwd,
   diffOpen,
+  assignedUserId,
   onRunProjectScript,
   onAddProjectScript,
   onUpdateProjectScript,
@@ -88,6 +91,14 @@ export const ChatHeader = memo(function ChatHeader({
         )}
       </div>
       <div className="flex shrink-0 items-center justify-end gap-2 @3xl/header-actions:gap-3">
+        <span className="hidden sm:inline-flex">
+          <ThreadAssignmentDropdown
+            assignedUserId={assignedUserId}
+            onAssign={() => {
+              // TODO: Wire to thread update command
+            }}
+          />
+        </span>
         {activeProjectScripts && (
           <span className="hidden sm:inline-flex">
             <ProjectScriptsControl
