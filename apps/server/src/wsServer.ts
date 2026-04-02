@@ -7,7 +7,6 @@
  * @module Server
  */
 import http from "node:http";
-import { timingSafeEqual } from "node:crypto";
 import type { Duplex } from "node:stream";
 
 import Mime from "@effect/platform-node/Mime";
@@ -134,46 +133,6 @@ function rejectUpgrade(
       "\r\n" +
       message,
   );
-}
-
-const _WEB_UI_AUTH_CHALLENGE_HEADER = 'Basic realm="T3 Code", charset="UTF-8"';
-
-function _decodeBasicAuthHeader(
-  headerValue: string | undefined,
-): { readonly username: string; readonly password: string } | null {
-  if (!headerValue) return null;
-  const [scheme, encoded] = headerValue.split(/\s+/, 2);
-  if (!scheme || !encoded || scheme.toLowerCase() !== "basic") return null;
-  let decoded: string;
-  try {
-    decoded = Buffer.from(encoded, "base64").toString("utf8");
-  } catch {
-    return null;
-  }
-  const delimiterIndex = decoded.indexOf(":");
-  if (delimiterIndex < 0) return null;
-  return {
-    username: decoded.slice(0, delimiterIndex),
-    password: decoded.slice(delimiterIndex + 1),
-  };
-}
-
-function _hasMatchingWebUiCredentials(
-  providedAuthHeader: string | undefined,
-  expectedCredentials: {
-    readonly username: string;
-    readonly password: string;
-  },
-): boolean {
-  const decoded = _decodeBasicAuthHeader(providedAuthHeader);
-  if (!decoded) return false;
-  const expected = Buffer.from(
-    `${expectedCredentials.username}:${expectedCredentials.password}`,
-    "utf8",
-  );
-  const provided = Buffer.from(`${decoded.username}:${decoded.password}`, "utf8");
-  if (expected.byteLength !== provided.byteLength) return false;
-  return timingSafeEqual(expected, provided);
 }
 
 function websocketRawToString(raw: unknown): string | null {
@@ -372,7 +331,6 @@ export const createServer = Effect.fn(function* (): Effect.fn.Return<
     staticDir,
     devUrl,
     authToken,
-    webUiAuth: _webUiAuth,
     host,
     logWebSocketEvents,
     autoBootstrapProjectFromCwd,

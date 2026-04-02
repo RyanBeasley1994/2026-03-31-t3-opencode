@@ -114,7 +114,6 @@ it.layer(testLayer)("server CLI command", (it) => {
       assert.equal(resolvedConfig?.devUrl?.toString(), "http://127.0.0.1:5173/");
       assert.equal(resolvedConfig?.noBrowser, true);
       assert.equal(resolvedConfig?.authToken, "auth-secret");
-      assert.equal(resolvedConfig?.webUiAuth, undefined);
       assert.equal(resolvedConfig?.autoBootstrapProjectFromCwd, false);
       assert.equal(resolvedConfig?.logWebSocketEvents, true);
       assert.equal(stop.mock.calls.length, 1);
@@ -151,39 +150,9 @@ it.layer(testLayer)("server CLI command", (it) => {
       assert.equal(resolvedConfig?.devUrl?.toString(), "http://localhost:5173/");
       assert.equal(resolvedConfig?.noBrowser, true);
       assert.equal(resolvedConfig?.authToken, "env-token");
-      assert.equal(resolvedConfig?.webUiAuth, undefined);
       assert.equal(resolvedConfig?.autoBootstrapProjectFromCwd, false);
       assert.equal(resolvedConfig?.logWebSocketEvents, true);
       assert.equal(findAvailablePort.mock.calls.length, 0);
-    }),
-  );
-
-  it.effect("supports web ui basic auth credentials from environment", () =>
-    Effect.gen(function* () {
-      yield* runCli([], {
-        T3CODE_NO_BROWSER: "true",
-        T3CODE_WEBUI_USERNAME: "admin",
-        T3CODE_WEBUI_PASSWORD: "super-secret",
-      });
-
-      assert.equal(start.mock.calls.length, 1);
-      assert.deepEqual(resolvedConfig?.webUiAuth, {
-        username: "admin",
-        password: "super-secret",
-      });
-    }),
-  );
-
-  it.effect("requires both web ui auth env variables when either is configured", () =>
-    Effect.gen(function* () {
-      yield* runCli([], {
-        T3CODE_NO_BROWSER: "true",
-        T3CODE_WEBUI_USERNAME: "admin",
-      }).pipe(Effect.catch(() => Effect.void));
-
-      assert.equal(start.mock.calls.length, 0);
-      assert.equal(stop.mock.calls.length, 0);
-      assert.equal(resolvedConfig, null);
     }),
   );
 

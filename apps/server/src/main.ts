@@ -124,14 +124,6 @@ const CliEnvConfig = Config.all({
     Config.option,
     Config.map(Option.getOrUndefined),
   ),
-  webUiUsername: Config.string("T3CODE_WEBUI_USERNAME").pipe(
-    Config.option,
-    Config.map(Option.getOrUndefined),
-  ),
-  webUiPassword: Config.string("T3CODE_WEBUI_PASSWORD").pipe(
-    Config.option,
-    Config.map(Option.getOrUndefined),
-  ),
   bootstrapFd: Config.int("T3CODE_BOOTSTRAP_FD").pipe(
     Config.option,
     Config.map(Option.getOrUndefined),
@@ -250,35 +242,6 @@ const ServerConfigLive = (input: CliInput) =>
           Option.fromUndefinedOr(bootstrap.authToken),
         ),
       );
-      const webUiUsername = Option.fromUndefinedOr(env.webUiUsername).pipe(
-        Option.map((value) => value.trim()),
-        Option.filter((value) => value.length > 0),
-      );
-      const webUiPassword = Option.fromUndefinedOr(env.webUiPassword).pipe(
-        Option.filter((value) => value.length > 0),
-      );
-      const webUiAuth: { readonly username: string; readonly password: string } | undefined =
-        yield* Effect.gen(function* () {
-          if (Option.isNone(webUiUsername) && Option.isNone(webUiPassword)) {
-            return undefined;
-          }
-          if (Option.isNone(webUiUsername)) {
-            return yield* new StartupError({
-              message:
-                "T3CODE_WEBUI_USERNAME must be set when T3CODE_WEBUI_PASSWORD is configured.",
-            });
-          }
-          if (Option.isNone(webUiPassword)) {
-            return yield* new StartupError({
-              message:
-                "T3CODE_WEBUI_PASSWORD must be set when T3CODE_WEBUI_USERNAME is configured.",
-            });
-          }
-          return {
-            username: webUiUsername.value,
-            password: webUiPassword.value,
-          };
-        });
       const autoBootstrapProjectFromCwd = resolveBooleanFlag(
         input.autoBootstrapProjectFromCwd,
         Option.getOrElse(
@@ -324,7 +287,6 @@ const ServerConfigLive = (input: CliInput) =>
         devUrl,
         noBrowser,
         authToken: Option.getOrUndefined(authToken),
-        webUiAuth,
         autoBootstrapProjectFromCwd,
         logWebSocketEvents,
         githubOrg: env.githubOrg,
@@ -408,12 +370,11 @@ const makeServerRuntimeProgram = (input: CliInput) =>
       config.host && !isWildcardHost(config.host)
         ? `http://${formatHostForUrl(config.host)}:${config.port}`
         : localUrl;
-    const { authToken, devUrl, webUiAuth, ...safeConfig } = config;
+    const { authToken, devUrl, ...safeConfig } = config;
     yield* Effect.logInfo("T3 Code running", {
       ...safeConfig,
       devUrl: devUrl?.toString(),
       authEnabled: Boolean(authToken),
-      webUiAuthEnabled: Boolean(webUiAuth),
     });
 
     if (!config.noBrowser) {

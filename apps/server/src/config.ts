@@ -43,12 +43,6 @@ export interface ServerConfigShape extends ServerDerivedPaths {
   readonly devUrl: URL | undefined;
   readonly noBrowser: boolean;
   readonly authToken: string | undefined;
-  readonly webUiAuth:
-    | {
-        readonly username: string;
-        readonly password: string;
-      }
-    | undefined;
   readonly autoBootstrapProjectFromCwd: boolean;
   readonly logWebSocketEvents: boolean;
   readonly githubOrg: string | undefined;
@@ -113,7 +107,6 @@ export class ServerConfig extends ServiceMap.Service<ServerConfig, ServerConfigS
           port: 0,
           host: undefined,
           authToken: undefined,
-          webUiAuth: undefined,
           staticDir: undefined,
           devUrl,
           noBrowser: false,
