@@ -582,7 +582,7 @@ describe("sendTurn", () => {
     await manager.sendTurn({
       threadId: asThreadId("thread_1"),
       input: "PLEASE IMPLEMENT THIS PLAN:\n- step 1",
-      interactionMode: "default",
+      interactionMode: "build",
     });
 
     expect(sendRequest).toHaveBeenCalledWith(context, "turn/start", {

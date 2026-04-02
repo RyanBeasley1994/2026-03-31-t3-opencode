@@ -1402,7 +1402,7 @@ describe("WebSocket Server", () => {
         model: "gpt-5-codex",
       },
       runtimeMode: "full-access",
-      interactionMode: "default",
+      interactionMode: "build",
       branch: null,
       worktreePath: null,
       createdAt,
@@ -1490,7 +1490,7 @@ describe("WebSocket Server", () => {
         model: "gpt-5-codex",
       },
       runtimeMode: "full-access",
-      interactionMode: "default",
+      interactionMode: "build",
       branch: null,
       worktreePath: null,
       createdAt,
@@ -1508,7 +1508,7 @@ describe("WebSocket Server", () => {
         attachments: [],
       },
       runtimeMode: "approval-required",
-      interactionMode: "default",
+      interactionMode: "build",
       createdAt,
     });
     expect(startTurnResponse.error).toBeUndefined();

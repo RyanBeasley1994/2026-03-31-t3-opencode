@@ -102,7 +102,7 @@ function createMinimalSnapshot(): OrchestrationReadModel {
           provider: "codex",
           model: "gpt-5",
         },
-        interactionMode: "default",
+        interactionMode: "build",
         runtimeMode: "full-access",
         branch: "main",
         worktreePath: null,

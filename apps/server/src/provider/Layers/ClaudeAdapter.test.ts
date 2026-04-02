@@ -2533,7 +2533,7 @@ describe("ClaudeAdapterLive", () => {
       yield* adapter.sendTurn({
         threadId: session.threadId,
         input: "now do it",
-        interactionMode: "default",
+        interactionMode: "build",
         attachments: [],
       });
 
